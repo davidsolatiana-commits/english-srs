@@ -11,7 +11,14 @@ No hay nada que instalar: React y SQLite (sql.js) se cargan desde CDN
 y el servidor local es un script de PowerShell (`serve.ps1`).
 La primera carga necesita internet.
 
-## Acceso directo en el escritorio (PC)
+## Versión publicada (la que se usa)
+
+**https://davidsolatiana-commits.github.io/english-srs/** (GitHub Pages, repo
+`davidsolatiana-commits/english-srs`). Instalada en el móvil y en el PC (Chrome); el acceso directo
+del escritorio abre esa app. Para publicar cambios hay que volver a subir los archivos al repo.
+Lo que sigue sobre `localhost`/servidor local queda solo para desarrollo.
+
+## Acceso directo en el escritorio (PC, versión local antigua)
 
 **English SRS** en el escritorio arranca el servidor local en segundo plano (sin ventana negra),
 espera a que responda y abre la **app instalada** (la de "📲 Instalar app", en el menú Inicio);
