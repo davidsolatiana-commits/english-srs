@@ -1,0 +1,66 @@
+<!doctype html>
+<!-- translate="no": que el navegador no ofrezca traducir la app (traduciría también el inglés que estudias) -->
+<html lang="es" translate="no">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="google" content="notranslate" />
+    <title>English SRS</title>
+    <meta name="description" content="Vocabulario y gramática de inglés (A2 → B2) con repetición espaciada." />
+
+    <!-- App instalable (PWA) -->
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#151514" media="(prefers-color-scheme: dark)" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="English" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+
+    <link rel="stylesheet" href="src/styles.css" />
+
+    <!-- SQLite compilado a WebAssembly (expone window.initSqlJs) -->
+    <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js"></script>
+
+    <!-- React sin build: los imports 'react' / 'react-dom/client' / 'htm' se resuelven aquí -->
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@18.3.1",
+          "react-dom/client": "https://esm.sh/react-dom@18.3.1/client?deps=react@18.3.1",
+          "htm": "https://esm.sh/htm@3.1.1",
+          "compromise": "https://esm.sh/compromise@14.17.0"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"><p class="status" id="boot">Cargando…</p></div>
+
+    <!-- Avisos si la app no llega a arrancar (React sustituye todo esto al montarse). -->
+    <script>
+      (function () {
+        var boot = document.getElementById('boot');
+        if (location.protocol === 'file:') {
+          boot.className = 'status error';
+          boot.innerHTML =
+            '<strong>Así no se puede abrir.</strong><br>' +
+            'Cierra esta pestaña y haz doble clic en <b>iniciar.bat</b> (en la misma carpeta). ' +
+            'Se abrirá la app en <b>http://localhost:5173</b>.';
+          return;
+        }
+        setTimeout(function () {
+          if (!document.getElementById('boot')) return;
+          boot.className = 'status error';
+          boot.innerHTML =
+            '<strong>La app no ha podido cargar.</strong><br>' +
+            'La primera vez necesita internet para descargar React y SQLite. ' +
+            'Comprueba la conexión y recarga la página (F5).';
+        }, 10000);
+      })();
+    </script>
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>
