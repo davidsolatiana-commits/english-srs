@@ -181,6 +181,8 @@ function createStore(SQL, initialDb) {
   // `let`: al restaurar una copia se sustituye la base de datos entera.
   let db = initialDb;
   let pendingWrite = Promise.resolve();
+  // Avisos tras cada escritura (la sincronización con Google Drive los usa).
+  const writeListeners = new Set();
 
   function all(sql, params = {}) {
     const stmt = db.prepare(sql);
@@ -240,11 +242,24 @@ function createStore(SQL, initialDb) {
   function flush() {
     const data = db.export();
     pendingWrite = pendingWrite.then(() => idbPut(DB_KEY, data));
+    writeListeners.forEach((l) => l());
     return pendingWrite;
   }
 
   return {
     flush,
+
+    onWrite(listener) {
+      writeListeners.add(listener);
+      return () => writeListeners.delete(listener);
+    },
+
+    hasData() {
+      return all(
+        `SELECT (SELECT COUNT(*) FROM words) + (SELECT COUNT(*) FROM phrases) + (SELECT COUNT(*) FROM notes)
+              + (SELECT COUNT(*) FROM grammar_progress) AS n`,
+      )[0].n > 0;
+    },
 
     exportFile() {
       return db.export();
