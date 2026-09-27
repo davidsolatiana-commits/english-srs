@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { html } from '../lib/html.js';
 import { relativeDay, todayISO } from '../lib/dates.js';
 import { Backup } from './Backup.js';
+import { SyncCard } from './Sync.js';
 import { DictLink, SpeakButton } from './WordTools.js';
 
 export function WordList({ db, onChange, version, onWrite }) {
@@ -20,7 +21,7 @@ export function WordList({ db, onChange, version, onWrite }) {
     onChange();
   }
 
-  const backup = html`<${Backup} db=${db} onChange=${onChange} wordCount=${words.length} />`;
+  const backup = html`<${SyncCard} /><${Backup} db=${db} onChange=${onChange} wordCount=${words.length} />`;
 
   if (words.length === 0) {
     return html`

@@ -19,6 +19,8 @@ import { WordList } from './WordList.js';
 import { Phrases } from './Phrases.js';
 import { Notebook } from './Notebook.js';
 import { Grammar } from './Grammar.js';
+import { SyncChip } from './Sync.js';
+import { initSync } from '../lib/sync.js';
 import { InstallButton, IOSInstallHint } from './InstallButton.js';
 
 // "Añadir palabra" no es pestaña: es el botón flotante ＋, disponible en todas.
@@ -172,6 +174,7 @@ export function App({ db }) {
   // Al abrir la app: completar las frases que quedaron a medias o fallaron (p. ej. sin conexión).
   useEffect(() => {
     db.retryFailedPhrases().then(() => processPending(db, onChange));
+    initSync(db); // Google Drive (solo en la versión publicada y si está conectado)
   }, [db]);
 
   const dueCount = db.countDue(todayISO(), settings.newPerDay);
@@ -183,7 +186,7 @@ export function App({ db }) {
     <header className="topbar">
       <div className="brand-row">
         <h1 className="brand">English <span>SRS</span></h1>
-        <${InstallButton} />
+        <span className="brand-actions"><${SyncChip} /><${InstallButton} /></span>
       </div>
       <nav className="tabs" role="tablist">
         ${TABS.map(
