@@ -733,6 +733,56 @@ ul.notes { margin-top: 12px; font-size: 0.92rem; }
 .word-item.paused .word-main { opacity: 0.55; }
 .review.paused-label { color: var(--hard); font-weight: 600; }
 
+/* Elegir palabras una a una (selector) */
+.pick-btn { flex-basis: 100%; max-width: max-content; }
+body.modal-open .fab { display: none; }
+.modal.picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 88vh;
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.3);
+}
+.picker h2 { margin: 0; padding-right: 36px; font-size: 1.2rem; }
+.picker-sub { margin: -6px 0 0; font-size: 0.82rem; }
+.picker-size { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 0.85rem; }
+.picker-tools { display: flex; gap: 8px; }
+.picker-tools select {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+}
+.picker-links { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.picked-chips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 84px; overflow-y: auto; }
+.picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  min-height: 120px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.picker-list li + li { border-top: 1px solid var(--border); }
+.picker-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; cursor: pointer; font-size: 0.92rem; }
+.picker-item input { width: 18px; height: 18px; flex: none; accent-color: var(--accent); }
+.picker-item.on { background: var(--accent-soft); }
+.picker-item.disabled { opacity: 0.45; cursor: default; }
+.picker-word { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.picker-empty { padding: 12px; }
+.picker-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.picker-count { font-weight: 700; font-size: 1.05rem; color: var(--muted); }
+.picker-count.full { color: var(--good); }
+
 /* Español como enunciado */
 .front.prompt-es { color: var(--accent); }
 
