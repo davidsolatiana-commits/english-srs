@@ -6,6 +6,7 @@ import { speak } from '../lib/speech.js';
 import { checkAnswer, clozeParts } from '../lib/answers.js';
 import { MODE_LABEL, OUTCOME_GRADES, pickMode, shuffle } from '../lib/modes.js';
 import { ChoiceCard, FlashCard, WriteCard } from './PracticeCards.js';
+import { isStudyFiltered } from '../lib/settings.js';
 
 const GRADE_BY_ID = {
   ...Object.fromEntries(GRADES.map((g) => [g.id, g])),
@@ -44,6 +45,7 @@ export function Practice({
   goTo,
   settings,
   free,
+  wordIds,
   dueCount,
   grammarDue = 0,
   onGrammarReview,
@@ -54,8 +56,15 @@ export function Practice({
   const [today] = useState(todayISO);
   const [session] = useState(() =>
     free
-      ? { words: shuffle(db.freePracticeWords(settings.freeOrder, settings.freeSize)), newWaiting: 0 }
-      : db.practiceQueue(today, settings.newPerDay),
+      ? {
+          words: shuffle(
+            wordIds?.length
+              ? db.wordsByIds(wordIds)
+              : db.freePracticeWords(settings.freeOrder, settings.freeSize, settings.study),
+          ),
+          newWaiting: 0,
+        }
+      : db.practiceQueue(today, settings.newPerDay, settings.study),
   );
   const [queue, setQueue] = useState(() => session.words.map((word) => ({ word, relearn: false })));
   const total = session.words.length;
@@ -161,7 +170,20 @@ export function Practice({
       <button className="btn small primary" onClick=${onGrammarReview}>Repasar gramática</button>
     </div>`;
 
+  const filtered = isStudyFiltered(settings.study);
   if (total === 0) {
+    if (free && hasWords) {
+      return html`
+        <div className="card empty">
+          <h2>No hay palabras que practicar</h2>
+          <p className="muted">
+            ${filtered
+              ? 'Ninguna palabra coincide con tu filtro de estudio. Cámbialo o quítalo arriba (🎯).'
+              : 'Todas tus palabras están en pausa. Reanúdalas en Palabras → Seleccionar.'}
+          </p>
+        </div>
+      `;
+    }
     if (free) {
       return html`
         <div className="card empty">
@@ -171,10 +193,10 @@ export function Practice({
         </div>
       `;
     }
-    const next = db.nextReview(today);
+    const next = db.nextReview(today, settings.study);
     return html`
       <div className="card empty">
-        <h2>Nada pendiente hoy</h2>
+        <h2>Nada pendiente hoy${filtered ? ' con este filtro' : ''}</h2>
         ${waitingNote ||
         html`<p className="muted">
           ${next

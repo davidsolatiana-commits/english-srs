@@ -103,7 +103,11 @@ function Slots({ target, typed, level, live, status }) {
 export function WritingPractice({ db, settings, wordIds, onRestart, goTo }) {
   const reps = settings.writeReps;
   const [words] = useState(() =>
-    shuffle(wordIds?.length ? db.wordsByIds(wordIds) : db.freePracticeWords(settings.writeOrder, settings.writeWords)),
+    shuffle(
+      wordIds?.length
+        ? db.wordsByIds(wordIds)
+        : db.freePracticeWords(settings.writeOrder, settings.writeWords, settings.study),
+    ),
   );
   const [phase, setPhase] = useState('drill'); // drill → final (dictado) → done
   const [steps, setSteps] = useState(() => buildDrill(words, reps));
@@ -201,6 +205,16 @@ export function WritingPractice({ db, settings, wordIds, onRestart, goTo }) {
 
   // ---------- Pantallas ----------
 
+  if (words.length === 0 && db.countWords() > 0) {
+    return html`
+      <div className="card empty">
+        <h2>No hay palabras para escribir</h2>
+        <p className="muted">
+          Ninguna palabra coincide con tu filtro de estudio (🎯) o están todas en pausa.
+        </p>
+      </div>
+    `;
+  }
   if (words.length === 0) {
     return html`
       <div className="card empty">

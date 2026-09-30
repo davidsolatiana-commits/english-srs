@@ -20,6 +20,7 @@ import { Phrases } from './Phrases.js';
 import { Notebook } from './Notebook.js';
 import { Grammar } from './Grammar.js';
 import { SyncChip } from './Sync.js';
+import { StudyFilter } from './StudyFilter.js';
 import { initSync } from '../lib/sync.js';
 import { InstallButton, IOSInstallHint } from './InstallButton.js';
 
@@ -44,7 +45,13 @@ const KINDS = [
   { id: 'write', label: 'Escritura', short: 'Escritura' },
 ];
 
-function PracticeSettings({ settings, onChange, kind, onKind, dueCount, writeWords, onClearWriteWords }) {
+// "a, b, c y 7 más" para las palabras elegidas a mano.
+function pickedLabel(words) {
+  const names = words.map((w) => w.word_en);
+  return names.length > 6 ? `${names.slice(0, 5).join(', ')} y ${names.length - 5} más` : names.join(', ');
+}
+
+function PracticeSettings({ db, settings, onChange, kind, onKind, dueCount, pickedWords, onClearPicked }) {
   const update = (patch) => (e) => {
     onChange({ ...settings, ...patch(e.target.type === 'checkbox' ? e.target.checked : e.target.value) });
     e.target.blur(); // que Espacio/Enter vuelvan a ser atajos de la práctica
@@ -58,6 +65,13 @@ function PracticeSettings({ settings, onChange, kind, onKind, dueCount, writeWor
     </label>
   `;
   const orderOptions = FREE_ORDERS.map((o) => ({ value: o.id, label: o.label }));
+  // Palabras elegidas a mano en "Palabras" (práctica libre o escritura): sustituyen al filtro.
+  const picked =
+    pickedWords &&
+    html`<span className="chosen-words">
+      Practicando: <strong>${pickedWords}</strong>
+      <button className="btn small" onClick=${onClearPicked}>Elegir otras</button>
+    </span>`;
 
   return html`
     <div className="segmented" role="tablist" aria-label="Tipo de práctica">
@@ -72,15 +86,14 @@ function PracticeSettings({ settings, onChange, kind, onKind, dueCount, writeWor
       )}
     </div>
 
+    ${!pickedWords &&
+    html`<${StudyFilter} db=${db} study=${settings.study} onChange=${(study) => onChange({ ...settings, study })} />`}
+
     ${kind === 'write'
       ? html`
           <div className="practice-settings">
-            ${writeWords
-              ? html`<span className="chosen-words">
-                  Practicando: <strong>${writeWords}</strong>
-                  <button className="btn small" onClick=${onClearWriteWords}>Elegir otras</button>
-                </span>`
-              : html`
+            ${picked ||
+              html`
                   ${select('Palabras', settings.writeOrder, (v) => ({ writeOrder: v }), orderOptions)}
                   ${select('Cuántas', settings.writeWords, (v) => ({ writeWords: Number(v) }),
                     WRITE_WORD_COUNTS.map((n) => ({ value: n, label: n })))}
@@ -98,7 +111,8 @@ function PracticeSettings({ settings, onChange, kind, onKind, dueCount, writeWor
           <div className="practice-settings">
             ${select('Modo', settings.mode, (v) => ({ mode: v }), MODES.map((m) => ({ value: m.id, label: m.label })))}
             ${kind === 'free'
-              ? html`
+              ? picked ||
+                html`
                   ${select('Palabras', settings.freeOrder, (v) => ({ freeOrder: v }), orderOptions)}
                   ${select('Cuántas', settings.freeSize, (v) => ({ freeSize: Number(v) }),
                     FREE_SIZES.map((n) => ({ value: n, label: n === 0 ? 'Todas' : n })))}
@@ -153,14 +167,14 @@ export function App({ db }) {
   }
   const openUnit = (unitId) => openGrammar({ page: 'unit', unitId });
 
-  // Tipo de práctica y palabras concretas para la escritura (null = según los ajustes).
-  // `round` fuerza una sesión nueva.
+  // Tipo de práctica y palabras elegidas a mano para la práctica libre o la escritura
+  // (null = según el filtro de estudio y los ajustes). `round` fuerza una sesión nueva.
   const [kind, setKind] = useState('due');
-  const [writeIds, setWriteIds] = useState(null);
+  const [pickedIds, setPickedIds] = useState(null);
   const [round, setRound] = useState(0);
   function startPractice(nextKind, ids = null) {
     setKind(nextKind);
-    setWriteIds(ids);
+    setPickedIds(ids?.length ? ids : null);
     setRound((r) => r + 1);
     setTab('practice');
   }
@@ -177,9 +191,10 @@ export function App({ db }) {
     initSync(db); // Google Drive (solo en la versión publicada y si está conectado)
   }, [db]);
 
-  const dueCount = db.countDue(todayISO(), settings.newPerDay);
+  const dueCount = db.countDue(todayISO(), settings.newPerDay, settings.study);
   const grammarDue = db.grammarDue(todayISO()).length;
-  const writeWordsLabel = writeIds ? db.wordsByIds(writeIds).map((w) => w.word_en).join(', ') : null;
+  const pickedWordsLabel = pickedIds ? pickedLabel(db.wordsByIds(pickedIds)) : null;
+  const studyKey = JSON.stringify(settings.study);
   const badges = { practice: dueCount, grammar: grammarDue };
 
   return html`
@@ -211,35 +226,37 @@ export function App({ db }) {
       ${tab === 'practice' &&
       html`
         <${PracticeSettings}
+          db=${db}
           settings=${settings}
           onChange=${changeSettings}
           kind=${kind}
           onKind=${(k) => startPractice(k)}
           dueCount=${dueCount}
-          writeWords=${writeWordsLabel}
-          onClearWriteWords=${() => startPractice('write')}
+          pickedWords=${kind !== 'due' ? pickedWordsLabel : null}
+          onClearPicked=${() => startPractice(kind)}
         />
         ${kind === 'write'
           ? html`<${WritingPractice}
-              key=${[round, settings.writeOrder, settings.writeWords, settings.writeReps].join('/')}
+              key=${[round, settings.writeOrder, settings.writeWords, settings.writeReps, studyKey].join('/')}
               db=${db}
               settings=${settings}
-              wordIds=${writeIds}
+              wordIds=${pickedIds}
               onRestart=${(ids) => startPractice('write', ids)}
               goTo=${goTo}
             />`
           : html`<${Practice}
-              key=${[kind, round, settings.mode, settings.newPerDay, settings.freeOrder, settings.freeSize].join('/')}
+              key=${[kind, round, settings.mode, settings.newPerDay, settings.freeOrder, settings.freeSize, studyKey].join('/')}
               db=${db}
               onChange=${onChange}
               goTo=${goTo}
               settings=${settings}
               free=${kind === 'free'}
+              wordIds=${kind === 'free' ? pickedIds : null}
               dueCount=${dueCount}
               grammarDue=${grammarDue}
               onGrammarReview=${() => openGrammar({ page: 'due' })}
               onStartFree=${() => startPractice('free')}
-              onNewRound=${() => startPractice('free')}
+              onNewRound=${() => startPractice('free', pickedIds)}
               onBackToDue=${() => startPractice('due')}
             />`}
       `}
@@ -267,7 +284,13 @@ export function App({ db }) {
           : html`<${Phrases} db=${db} onChange=${onChange} version=${version} onOpenUnit=${openUnit} />`}
       `}
       ${tab === 'list' &&
-      html`<${WordList} db=${db} onChange=${onChange} version=${version} onWrite=${(id) => startPractice('write', [id])} />`}
+      html`<${WordList}
+        db=${db}
+        onChange=${onChange}
+        version=${version}
+        onWrite=${(ids) => startPractice('write', ids)}
+        onPractice=${(ids) => startPractice('free', ids)}
+      />`}
     </main>
 
     ${!addOpen &&
