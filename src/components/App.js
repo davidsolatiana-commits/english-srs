@@ -21,6 +21,7 @@ import { Notebook } from './Notebook.js';
 import { Grammar } from './Grammar.js';
 import { SyncChip } from './Sync.js';
 import { StudyFilter } from './StudyFilter.js';
+import { WordPicker } from './WordPicker.js';
 import { initSync } from '../lib/sync.js';
 import { InstallButton, IOSInstallHint } from './InstallButton.js';
 
@@ -51,7 +52,7 @@ function pickedLabel(words) {
   return names.length > 6 ? `${names.slice(0, 5).join(', ')} y ${names.length - 5} más` : names.join(', ');
 }
 
-function PracticeSettings({ db, settings, onChange, kind, onKind, dueCount, pickedWords, onClearPicked }) {
+function PracticeSettings({ db, settings, onChange, kind, onKind, dueCount, pickedWords, onClearPicked, onOpenPicker }) {
   const update = (patch) => (e) => {
     onChange({ ...settings, ...patch(e.target.type === 'checkbox' ? e.target.checked : e.target.value) });
     e.target.blur(); // que Espacio/Enter vuelvan a ser atajos de la práctica
@@ -65,13 +66,18 @@ function PracticeSettings({ db, settings, onChange, kind, onKind, dueCount, pick
     </label>
   `;
   const orderOptions = FREE_ORDERS.map((o) => ({ value: o.id, label: o.label }));
-  // Palabras elegidas a mano en "Palabras" (práctica libre o escritura): sustituyen al filtro.
+  // Palabras elegidas a mano (selector o "Palabras"): sustituyen al filtro y a "Palabras/Cuántas".
   const picked =
     pickedWords &&
     html`<span className="chosen-words">
       Practicando: <strong>${pickedWords}</strong>
-      <button className="btn small" onClick=${onClearPicked}>Elegir otras</button>
+      <button className="btn small" onClick=${onOpenPicker}>Cambiar</button>
+      <button className="btn small" onClick=${onClearPicked}>Volver al filtro</button>
     </span>`;
+  const pickButton =
+    kind !== 'due' &&
+    !pickedWords &&
+    html`<button className="btn small pick-btn" onClick=${onOpenPicker}>✋ Elegir palabras una a una</button>`;
 
   return html`
     <div className="segmented" role="tablist" aria-label="Tipo de práctica">
@@ -92,6 +98,7 @@ function PracticeSettings({ db, settings, onChange, kind, onKind, dueCount, pick
     ${kind === 'write'
       ? html`
           <div className="practice-settings">
+            ${pickButton}
             ${picked ||
               html`
                   ${select('Palabras', settings.writeOrder, (v) => ({ writeOrder: v }), orderOptions)}
@@ -109,6 +116,7 @@ function PracticeSettings({ db, settings, onChange, kind, onKind, dueCount, pick
         `
       : html`
           <div className="practice-settings">
+            ${pickButton}
             ${select('Modo', settings.mode, (v) => ({ mode: v }), MODES.map((m) => ({ value: m.id, label: m.label })))}
             ${kind === 'free'
               ? picked ||
@@ -171,6 +179,7 @@ export function App({ db }) {
   // (null = según el filtro de estudio y los ajustes). `round` fuerza una sesión nueva.
   const [kind, setKind] = useState('due');
   const [pickedIds, setPickedIds] = useState(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [round, setRound] = useState(0);
   function startPractice(nextKind, ids = null) {
     setKind(nextKind);
@@ -234,7 +243,19 @@ export function App({ db }) {
           dueCount=${dueCount}
           pickedWords=${kind !== 'due' ? pickedWordsLabel : null}
           onClearPicked=${() => startPractice(kind)}
+          onOpenPicker=${() => setPickerOpen(true)}
         />
+        ${pickerOpen &&
+        html`<${WordPicker}
+          db=${db}
+          kind=${kind}
+          initialIds=${pickedIds}
+          onClose=${() => setPickerOpen(false)}
+          onStart=${(ids) => {
+            setPickerOpen(false);
+            startPractice(kind, ids);
+          }}
+        />`}
         ${kind === 'write'
           ? html`<${WritingPractice}
               key=${[round, settings.writeOrder, settings.writeWords, settings.writeReps, studyKey].join('/')}
