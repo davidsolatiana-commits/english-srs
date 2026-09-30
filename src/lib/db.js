@@ -83,7 +83,34 @@ const MIGRATIONS = [
     next_review_date TEXT
   );
   `,
+  // v6: palabras en pausa. No salen en ninguna práctica (ni cuentan como pendientes)
+  // hasta que se reanudan; su programación SM-2 se conserva tal cual.
+  `
+  ALTER TABLE words ADD COLUMN suspended INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
+
+// Filtro de estudio { levels, categories, sources }: cada lista vacía = sin filtrar por ella;
+// '' dentro de una lista = palabras sin ese dato. Las pausadas siempre quedan fuera.
+function studyWhere(filter = {}) {
+  const parts = ['suspended = 0'];
+  const params = {};
+  const add = (column, values, prefix) => {
+    if (!values?.length) return;
+    const or = [];
+    const named = values.filter((v) => v !== '');
+    if (named.length) {
+      named.forEach((v, i) => (params[`:${prefix}${i}`] = v));
+      or.push(`${column} IN (${named.map((_, i) => `:${prefix}${i}`).join(', ')})`);
+    }
+    if (values.includes('')) or.push(`${column} IS NULL OR ${column} = ''`);
+    parts.push(`(${or.join(' OR ')})`);
+  };
+  add('cefr_level', filter.levels, 'lv');
+  add('category', filter.categories, 'ct');
+  add('source', filter.sources, 'sr');
+  return { where: parts.join(' AND '), params };
+}
 
 const NOTE_FIELDS = ['title', 'body', 'word_ids'];
 
@@ -231,10 +258,11 @@ function createStore(SQL, initialDb) {
     return Math.max(0, newPerDay - started);
   }
 
-  function countNew(today) {
+  function countNew(today, filter) {
+    const f = studyWhere(filter);
     return all(
-      'SELECT COUNT(*) AS n FROM words WHERE first_review_date IS NULL AND next_review_date <= :today',
-      { ':today': today },
+      `SELECT COUNT(*) AS n FROM words WHERE first_review_date IS NULL AND next_review_date <= :today AND ${f.where}`,
+      { ':today': today, ...f.params },
     )[0].n;
   }
 
@@ -335,41 +363,61 @@ function createStore(SQL, initialDb) {
       return all('SELECT * FROM words ORDER BY date_added DESC, id DESC');
     },
 
+    async setSuspended(ids, suspended) {
+      const wanted = ids.map(Number).filter(Number.isInteger);
+      if (wanted.length === 0) return;
+      db.run(`UPDATE words SET suspended = :s WHERE id IN (${wanted.join(',')})`, { ':s': suspended ? 1 : 0 });
+      await flush();
+    },
+
+    // Cuántas palabras entran en el filtro de estudio (sin contar las pausadas).
+    countStudy(filter) {
+      const f = studyWhere(filter);
+      return all(`SELECT COUNT(*) AS n FROM words WHERE ${f.where}`, f.params)[0].n;
+    },
+
     // Sesión de hoy: primero todos los repasos pendientes (los más atrasados antes,
     // mezclados entre sí) y después las nuevas, por orden de llegada, hasta el límite diario.
-    practiceQueue(today, newPerDay) {
+    practiceQueue(today, newPerDay, filter) {
+      const f = studyWhere(filter);
       const reviews = all(
         `SELECT * FROM words
-          WHERE first_review_date IS NOT NULL AND next_review_date <= :today
+          WHERE first_review_date IS NOT NULL AND next_review_date <= :today AND ${f.where}
           ORDER BY next_review_date, RANDOM()`,
-        { ':today': today },
+        { ':today': today, ...f.params },
       );
       const fresh = all(
-        `SELECT * FROM words WHERE first_review_date IS NULL AND next_review_date <= :today
+        `SELECT * FROM words WHERE first_review_date IS NULL AND next_review_date <= :today AND ${f.where}
           ORDER BY date_added, id LIMIT :quota`,
-        { ':today': today, ':quota': newQuota(today, newPerDay) },
+        { ':today': today, ':quota': newQuota(today, newPerDay), ...f.params },
       );
-      return { words: [...reviews, ...fresh], newWaiting: countNew(today) - fresh.length };
+      return { words: [...reviews, ...fresh], newWaiting: countNew(today, filter) - fresh.length };
     },
 
     // Lo mismo que practiceQueue(...).words.length, sin cargar las palabras.
-    countDue(today, newPerDay) {
+    countDue(today, newPerDay, filter) {
+      const f = studyWhere(filter);
       const reviews = all(
-        `SELECT COUNT(*) AS n FROM words WHERE first_review_date IS NOT NULL AND next_review_date <= :today`,
-        { ':today': today },
+        `SELECT COUNT(*) AS n FROM words
+          WHERE first_review_date IS NOT NULL AND next_review_date <= :today AND ${f.where}`,
+        { ':today': today, ...f.params },
       )[0].n;
-      return reviews + Math.min(countNew(today), newQuota(today, newPerDay));
+      return reviews + Math.min(countNew(today, filter), newQuota(today, newPerDay));
     },
 
-    // Práctica libre: cualquier palabra, esté o no pendiente. `limit` 0 = todas.
+    // Práctica libre: cualquier palabra del filtro, esté o no pendiente. `limit` 0 = todas.
     //   random → al azar · hard → menor factor de facilidad (las que más fallas) · recent → últimas añadidas
-    freePracticeWords(order, limit) {
+    freePracticeWords(order, limit, filter) {
       const orderBy = {
         random: 'RANDOM()',
         hard: 'ease_factor ASC, repetitions ASC, RANDOM()',
         recent: 'date_added DESC, id DESC',
       }[order] ?? 'RANDOM()';
-      return all(`SELECT * FROM words ORDER BY ${orderBy} LIMIT :limit`, { ':limit': limit > 0 ? limit : -1 });
+      const f = studyWhere(filter);
+      return all(`SELECT * FROM words WHERE ${f.where} ORDER BY ${orderBy} LIMIT :limit`, {
+        ':limit': limit > 0 ? limit : -1,
+        ...f.params,
+      });
     },
 
     wordsByIds(ids) {
@@ -399,13 +447,14 @@ function createStore(SQL, initialDb) {
     },
 
     // Próximo día con repasos y cuántas palabras tocan ese día.
-    nextReview(today) {
+    nextReview(today, filter) {
+      const f = studyWhere(filter);
       return (
         all(
           `SELECT next_review_date AS date, COUNT(*) AS n FROM words
-            WHERE next_review_date > :today
+            WHERE next_review_date > :today AND ${f.where}
             GROUP BY next_review_date ORDER BY next_review_date LIMIT 1`,
-          { ':today': today },
+          { ':today': today, ...f.params },
         )[0] ?? null
       );
     },

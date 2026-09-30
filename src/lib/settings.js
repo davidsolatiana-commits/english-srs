@@ -26,11 +26,18 @@ export const DEFAULT_SETTINGS = {
   writeWords: 5,
   writeReps: 5,
   writeAudio: true,
+  // Qué palabras estudiar (repaso de hoy, práctica libre y escritura). Listas vacías = todas.
+  study: { levels: [], categories: [], sources: [] },
 };
+
+export function isStudyFiltered(study) {
+  return Boolean(study && (study.levels.length || study.categories.length || study.sources.length));
+}
 
 export function loadSettings() {
   try {
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(KEY) || '{}') };
+    const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
+    return { ...DEFAULT_SETTINGS, ...saved, study: { ...DEFAULT_SETTINGS.study, ...saved.study } };
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
