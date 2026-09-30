@@ -35,6 +35,7 @@ const APP_FILES = [
   './src/components/WordList.js',
   './src/components/Sync.js',
   './src/components/StudyFilter.js',
+  './src/components/WordPicker.js',
   './src/components/UnitLink.js',
   './src/components/WordTools.js',
   './src/components/WritingPractice.js',
