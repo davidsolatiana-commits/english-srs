@@ -860,6 +860,7 @@ body.modal-open .fab { display: none; }
 .group-editor-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 0.85rem; }
 .group-editor-row input { flex: 1 1 160px; min-width: 0; }
 .group-editor-row select { padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
+.media-job { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .emoji-input { flex: 0 0 52px !important; text-align: center; }
 
 /* Importar lista */
