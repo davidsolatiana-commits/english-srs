@@ -702,6 +702,22 @@ function createStore(SQL, initialDb) {
       return all('SELECT * FROM words ORDER BY date_added DESC, id DESC');
     },
 
+    // "Ya las sé": cuentan como dominadas y vuelven dentro de 30-60 días (repartidas al azar para
+    // que no lleguen todas el mismo día). Si fallas en ese repaso, SM-2 las reprograma como siempre.
+    async markKnown(ids, today) {
+      const wanted = intList(ids);
+      if (!wanted) return;
+      db.run(
+        `UPDATE words
+            SET repetitions = MAX(repetitions, 3), interval_days = MAX(interval_days, 30), ease_factor = MAX(ease_factor, 2.6),
+                first_review_date = COALESCE(first_review_date, :today), last_review_date = :today,
+                next_review_date = date(:today, '+' || (30 + abs(random()) % 31) || ' days')
+          WHERE id IN (${wanted})`,
+        { ':today': today },
+      );
+      await flush();
+    },
+
     async setSuspended(ids, suspended) {
       const wanted = ids.map(Number).filter(Number.isInteger);
       if (wanted.length === 0) return;
