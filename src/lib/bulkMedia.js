@@ -239,7 +239,8 @@ export async function runMediaJob(db, ids, { images = true, examples = true, onC
         }
         job.done++;
         emit();
-        await new Promise((r) => setTimeout(r, 200)); // sin saturar los servicios gratuitos
+        // Sin setTimeout: en una pestaña oculta Chrome lo retrasa hasta 1 minuto. El ritmo ya lo
+        // marcan las propias peticiones (3 a la vez como mucho).
       }
     };
     await db.batch(() => Promise.all(Array.from({ length: WORKERS }, worker)));
