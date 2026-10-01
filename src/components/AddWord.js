@@ -3,6 +3,7 @@ import { html } from '../lib/html.js';
 import { todayISO } from '../lib/dates.js';
 import { CATEGORIES, CEFR_LEVELS } from '../lib/db.js';
 import { translateWord } from '../lib/translate.js';
+import { enrichWord } from '../lib/media.js';
 import { DictLink, SpeakButton } from './WordTools.js';
 
 const EMPTY = { word_en: '', translation_es: '', example_sentence: '', category: '', cefr_level: '' };
@@ -125,7 +126,7 @@ export function AddWord({ db, onChange, version, settings, onSettings }) {
     setSuggestion(null);
     wordInput.current?.focus();
     try {
-      await db.addWord(
+      const id = await db.addWord(
         {
           word_en,
           translation_es,
@@ -140,6 +141,12 @@ export function AddWord({ db, onChange, version, settings, onSettings }) {
         type: 'ok',
         text: `Añadida: «${word_en}» = «${translation_es}»${autoTranslated ? ' (traducción automática)' : ''}`,
       });
+      // Imagen y ejemplos en segundo plano: no hace esperar para añadir la siguiente.
+      if (settings.autoImage || settings.autoExamples) {
+        enrichWord(db, db.getWord(id), { image: settings.autoImage, examples: settings.autoExamples })
+          .catch((err) => console.warn('Imagen/ejemplos:', err.message))
+          .finally(onChange);
+      }
     } catch (err) {
       console.error(err);
       setForm(submitted);
@@ -268,6 +275,26 @@ export function AddWord({ db, onChange, version, settings, onSettings }) {
           ${translating ? 'Traduciendo…' : 'Añadir'}
         </button>
         ${message && html`<span className=${'msg ' + message.type} role="status">${message.text}</span>`}
+      </div>
+      <div className="auto-media">
+        <span className="muted">Al añadir, buscar sola:</span>
+        <label className="switch" title="Busca una imagen en Openverse/Wikipedia (la palabra se envía a esos servicios)">
+          <input
+            type="checkbox"
+            checked=${settings.autoImage}
+            onChange=${(e) => onSettings({ ...settings, autoImage: e.target.checked })}
+          />
+          una imagen
+        </label>
+        <label className="switch" title="Busca frases reales con traducción en Tatoeba">
+          <input
+            type="checkbox"
+            checked=${settings.autoExamples}
+            onChange=${(e) => onSettings({ ...settings, autoExamples: e.target.checked })}
+          />
+          ejemplos de uso
+        </label>
+        <span className="muted">· Puedes cambiarlos en Palabras, pulsando la palabra.</span>
       </div>
     </form>
   `;

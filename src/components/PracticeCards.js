@@ -25,9 +25,16 @@ function English({ word }) {
   `;
 }
 
+// Tras responder: la imagen de la palabra (si tiene) y el ejemplo principal con su traducción.
 function Example({ word }) {
-  if (!word.example_sentence) return null;
-  return html`<div className="example">${word.example_sentence} <${SpeakButton} text=${word.example_sentence} /></div>`;
+  return html`
+    ${word.image && html`<img className="card-image" src=${word.image} alt="" />`}
+    ${word.example_sentence &&
+    html`<div className="example">
+      ${word.example_sentence} <${SpeakButton} text=${word.example_sentence} />
+      ${word.example_es && html`<div className="example-es">${word.example_es}</div>`}
+    </div>`}
+  `;
 }
 
 // ---------- Tarjetas (te valoras tú) ----------
@@ -150,7 +157,9 @@ export function WriteCard({ word, mode, cloze, isNew, result, onSubmit }) {
           ${result.outcome !== 'correct' && result.outcome !== 'hinted'
             ? html`<div className="expected">Respuesta: <strong>${expected}</strong> <${SpeakButton} text=${expected} /></div>`
             : html`<${English} word=${word} />`}
-          ${mode === 'write' && html`<${Example} word=${word} />`}
+          ${mode === 'write'
+            ? html`<${Example} word=${word} />`
+            : word.image && html`<img className="card-image" src=${word.image} alt="" />`}
           <div className="word-tools"><${DictLink} word=${word.word_en} /></div>
         </div>
       `}

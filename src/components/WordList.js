@@ -5,6 +5,8 @@ import { CATEGORIES, CEFR_LEVELS } from '../lib/db.js';
 import { Backup } from './Backup.js';
 import { SyncCard } from './Sync.js';
 import { DictLink, SpeakButton } from './WordTools.js';
+import { WordDetail } from './WordDetail.js';
+import { MediaFill } from './MediaFill.js';
 
 // Filtros del listado. '' = todas; '-' = sin ese dato.
 const STATES = [
@@ -39,8 +41,11 @@ export function WordList({ db, onChange, version, onWrite, onPractice }) {
   const [state, setState] = useState('');
   // null = sin modo selección; Set de ids en modo selección.
   const [selected, setSelected] = useState(null);
+  const [detailId, setDetailId] = useState(null);
   const words = useMemo(() => db.listWords(), [db, version]);
+  const exampleCounts = useMemo(() => db.exampleCounts(), [db, version]);
   const today = todayISO();
+  const exampleTotal = (w) => (exampleCounts[w.id] || 0) + (w.example_sentence ? 1 : 0);
 
   const q = query.trim().toLowerCase();
   const visible = words.filter(
@@ -88,7 +93,12 @@ export function WordList({ db, onChange, version, onWrite, onPractice }) {
     setSelected(new Set());
   }
 
-  const backup = html`<${SyncCard} /><${Backup} db=${db} onChange=${onChange} wordCount=${words.length} />`;
+  const backup = html`
+    <${MediaFill} db=${db} words=${words} exampleCounts=${exampleCounts} onChange=${onChange} />
+    <${SyncCard} /><${Backup} db=${db} onChange=${onChange} wordCount=${words.length} />
+    ${detailId &&
+    html`<${WordDetail} key=${detailId} db=${db} wordId=${detailId} onClose=${() => setDetailId(null)} onChange=${onChange} />`}
+  `;
 
   if (words.length === 0) {
     return html`
@@ -194,19 +204,29 @@ export function WordList({ db, onChange, version, onWrite, onPractice }) {
                 onChange=${() => toggle(w.id)}
                 aria-label=${`Seleccionar ${w.word_en}`}
               />`}
-              <div className="word-main">
+              ${w.image &&
+              html`<img
+                className="word-thumb"
+                src=${w.image}
+                alt=""
+                loading="lazy"
+                onClick=${selected ? undefined : () => setDetailId(w.id)}
+              />`}
+              <div className="word-main" onClick=${selected ? undefined : () => setDetailId(w.id)}>
                 <div>
-                  <strong>${w.word_en}</strong>
+                  <strong className="word-open" title="Ver ficha: imagen y ejemplos">${w.word_en}</strong>
                   <${SpeakButton} text=${w.word_en} />
                   <span className="muted"> — ${w.translation_es}</span>
                 </div>
                 ${w.example_sentence &&
                 html`<div className="example">${w.example_sentence} <${SpeakButton} text=${w.example_sentence} /></div>`}
+                ${w.example_es && html`<div className="example-es muted">${w.example_es}</div>`}
                 <div className="meta">
                   <${DictLink} word=${w.word_en} />
                   ${w.cefr_level && html`<span className="tag level">${w.cefr_level}</span>`}
                   ${w.category && html`<span className="tag">${w.category}</span>`}
                   ${w.source && html`<span className="tag source">${w.source}</span>`}
+                  ${exampleTotal(w) > 1 && html`<span className="tag" title="Ejemplos guardados">${exampleTotal(w)} ejemplos</span>`}
                   ${w.suspended
                     ? html`<span className="review paused-label">⏸ En pausa</span>`
                     : w.first_review_date
