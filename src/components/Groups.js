@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useSyncExternalStore } from 'react';
 import { html } from '../lib/html.js';
 import { flattenTree, groupLabel, groupOptions } from '../lib/groups.js';
 import { translatePending } from '../lib/importer.js';
+import { organizeByTopics } from '../lib/oxfordTopics.js';
+import { getMediaJob, runMediaJob, stopMediaJob, subscribeMediaJob } from '../lib/bulkMedia.js';
 import { ImportList } from './ImportList.js';
 
 function GroupProgress({ g }) {
@@ -19,12 +21,54 @@ function GroupProgress({ g }) {
   `;
 }
 
+// Imágenes y ejemplos para todas las palabras del grupo (tarea larga, se puede detener y seguir).
+function MediaJobButton({ db, g, onChange }) {
+  const job = useSyncExternalStore(subscribeMediaJob, getMediaJob);
+  if (job?.running) {
+    return html`<span className="media-job">
+      <span className="muted">🖼 ${job.done} / ${job.total} · ${job.images} imágenes · ${job.examples} ejemplos</span>
+      <button className="btn small" onClick=${stopMediaJob} disabled=${job.stop}>${job.stop ? 'Deteniendo…' : 'Detener'}</button>
+    </span>`;
+  }
+  return html`
+    <button
+      className="btn small"
+      title="Busca una imagen y 3 frases de ejemplo para cada palabra que no las tenga. Tarda (unos 20-30 min para 3000 palabras): puedes detenerlo y seguir otro día."
+      onClick=${() => runMediaJob(db, db.groupWordIds(g.id), { onChange })}
+    >
+      🖼 Imágenes y ejemplos para todo el grupo
+    </button>
+    ${job && !job.running &&
+    html`<span className="muted">
+      Última vez: ${job.images} imágenes y ${job.examples} ejemplos en ${job.done} palabras${job.error ? ` (parado: ${job.error})` : ''}.
+    </span>`}
+  `;
+}
+
 function GroupEditor({ db, g, groups, onChange, onClose }) {
   const [name, setName] = useState(g.name);
   const [emoji, setEmoji] = useState(g.emoji ?? '');
   const [sub, setSub] = useState('');
   const [msg, setMsg] = useState(null);
   const [translating, setTranslating] = useState(null);
+  const [working, setWorking] = useState(null);
+
+  async function organize() {
+    const ok = confirm(
+      `Se crearán subgrupos por tema dentro de «${g.name}» (comida, deportes, emociones…) y las palabras nuevas ` +
+        'pasarán a llegarte por nivel y, dentro de cada nivel, tema a tema. Tu progreso no cambia. ¿Seguimos?',
+    );
+    if (!ok) return;
+    setWorking('Organizando por temas…');
+    try {
+      const r = await organizeByTopics(db, g.id);
+      setWorking(`✓ ${r.words} palabras repartidas en ${r.topics} temas.`);
+      onChange();
+    } catch (err) {
+      setWorking(null);
+      setMsg(err.message);
+    }
+  }
 
   async function save() {
     if (!name.trim()) return;
@@ -95,6 +139,11 @@ function GroupEditor({ db, g, groups, onChange, onClose }) {
           ${parents.map((o) => html`<option key=${o.value} value=${o.value}>${o.label}</option>`)}
         </select>
       </label>
+      <div className="group-editor-row">
+        <button className="btn small" onClick=${organize} disabled=${!!working}>🗂 Organizar por temas</button>
+        <${MediaJobButton} db=${db} g=${g} onChange=${onChange} />
+      </div>
+      ${working && html`<p className="muted">${working}</p>`}
       <div className="group-editor-row">
         ${g.untranslated > 0 &&
         html`<button className="btn small" onClick=${translate} disabled=${!!translating}>
