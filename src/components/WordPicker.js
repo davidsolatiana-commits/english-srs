@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { html } from '../lib/html.js';
 import { CEFR_LEVELS } from '../lib/db.js';
 import { shuffle } from '../lib/modes.js';
+import { groupOptions } from '../lib/groups.js';
 
 // Cuántas palabras elegir (0 = sin límite).
 export const PICK_SIZES = [5, 10, 15, 20, 0];
@@ -36,7 +37,10 @@ export function WordPicker({ db, kind, initialIds, onStart, onClose }) {
   });
   const [query, setQuery] = useState('');
   const [level, setLevel] = useState('');
+  const [group, setGroup] = useState('');
   const [showPaused, setShowPaused] = useState(false);
+  const groups = useMemo(() => db.listGroups(), [db]);
+  const groupIds = useMemo(() => (group ? new Set(db.groupWordIds(Number(group))) : null), [db, group]);
 
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -52,6 +56,8 @@ export function WordPicker({ db, kind, initialIds, onStart, onClose }) {
   const visible = words.filter(
     (w) =>
       (showPaused || !w.suspended || picked.includes(w.id)) &&
+      (w.translation_es || picked.includes(w.id)) &&
+      (!groupIds || groupIds.has(w.id)) &&
       (!level || w.cefr_level === level) &&
       (!q || w.word_en.toLowerCase().includes(q) || w.translation_es.toLowerCase().includes(q)),
   );
@@ -79,6 +85,12 @@ export function WordPicker({ db, kind, initialIds, onStart, onClose }) {
       const missing = size > 0 ? size - prev.length : pool.length;
       return [...prev, ...pool.slice(0, Math.max(0, missing))];
     });
+  }
+
+  // "Cargar grupo": todas las palabras visibles del grupo (sin límite de cantidad).
+  function loadGroup() {
+    setSize(0);
+    setPicked(visible.filter((w) => !w.suspended).map((w) => w.id));
   }
 
   function start() {
@@ -126,6 +138,15 @@ export function WordPicker({ db, kind, initialIds, onStart, onClose }) {
             ${CEFR_LEVELS.map((l) => html`<option key=${l} value=${l}>${l}</option>`)}
           </select>
         </div>
+        ${groups.length > 0 &&
+        html`<div className="picker-tools">
+          <select value=${group} onChange=${(e) => setGroup(e.target.value)} aria-label="Grupo">
+            <option value="">Todos los grupos</option>
+            ${groupOptions(groups).map((o) => html`<option key=${o.value} value=${o.value}>${o.label}</option>`)}
+          </select>
+          ${group &&
+          html`<button className="btn small primary" onClick=${loadGroup}>📁 Cargar el grupo (${visible.filter((w) => !w.suspended).length})</button>`}
+        </div>`}
         <div className="picker-links">
           <button className="btn small" onClick=${fillRandom} disabled=${full}>🎲 Completar al azar</button>
           ${picked.length > 0 && html`<button className="btn small" onClick=${() => setPicked([])}>Vaciar</button>`}
@@ -142,16 +163,17 @@ export function WordPicker({ db, kind, initialIds, onStart, onClose }) {
 
         ${picked.length > 0 &&
         html`<div className="picked-chips">
-          ${picked.map(
+          ${picked.slice(0, 40).map(
             (id) => html`<button key=${id} className="chip small selected" onClick=${() => toggle(id)} title="Quitar">
               ${byId.get(id)?.word_en} ✕
             </button>`,
           )}
+          ${picked.length > 40 && html`<span className="muted hint">y ${picked.length - 40} más</span>`}
         </div>`}
 
         <ul className="picker-list">
           ${visible.length === 0 && html`<li className="muted picker-empty">Ninguna palabra coincide.</li>`}
-          ${visible.map((w) => {
+          ${visible.slice(0, 300).map((w) => {
             const on = picked.includes(w.id);
             const disabled = !on && full;
             return html`
@@ -168,6 +190,8 @@ export function WordPicker({ db, kind, initialIds, onStart, onClose }) {
               </li>
             `;
           })}
+          ${visible.length > 300 &&
+          html`<li className="muted picker-empty">…y ${visible.length - 300} más: usa el buscador o los filtros.</li>`}
         </ul>
 
         <div className="picker-footer">

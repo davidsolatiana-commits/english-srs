@@ -9,6 +9,7 @@ import {
   NEW_PER_DAY_OPTIONS,
   WRITE_REPS,
   WRITE_WORD_COUNTS,
+  DEFAULT_SETTINGS,
   loadSettings,
   saveSettings,
 } from '../lib/settings.js';
@@ -22,6 +23,7 @@ import { Grammar } from './Grammar.js';
 import { SyncChip } from './Sync.js';
 import { StudyFilter } from './StudyFilter.js';
 import { WordPicker } from './WordPicker.js';
+import { Groups } from './Groups.js';
 import { initSync } from '../lib/sync.js';
 import { InstallButton, IOSInstallHint } from './InstallButton.js';
 
@@ -37,6 +39,12 @@ const TABS = [
 const WRITE_SECTIONS = [
   { id: 'notebook', label: 'Cuaderno' },
   { id: 'phrases', label: 'Frases rápidas' },
+];
+
+// Pestaña "Palabras": la lista y los grupos (con la importación de listas).
+const LIST_SECTIONS = [
+  { id: 'list', label: 'Lista' },
+  { id: 'groups', label: 'Grupos' },
 ];
 
 // Tipos de práctica: repaso de hoy (SM-2), práctica libre y escritura (estas dos no reprograman).
@@ -188,10 +196,31 @@ export function App({ db }) {
     setTab('practice');
   }
 
-  const [settings, setSettings] = useState(loadSettings);
+  const [savedSettings, setSettings] = useState(loadSettings);
   function changeSettings(next) {
     setSettings(next);
     saveSettings(next);
+  }
+  // El filtro de estudio puede apuntar a grupos ya borrados (o creados en otro dispositivo): se ignoran.
+  const existingGroups = db.groupIds();
+  const settings = {
+    ...savedSettings,
+    study: { ...savedSettings.study, groups: (savedSettings.study.groups ?? []).filter((id) => existingGroups.includes(id)) },
+  };
+
+  // Palabras: lista o grupos, y el grupo por el que se filtra la lista.
+  const [listSection, setListSection] = useState('list');
+  const [listGroup, setListGroup] = useState('');
+  function showGroupWords(groupId) {
+    setListGroup(String(groupId));
+    setListSection('list');
+    setTab('list');
+    window.scrollTo(0, 0);
+  }
+  function studyGroup(groupId) {
+    changeSettings({ ...settings, study: { ...DEFAULT_SETTINGS.study, groups: [groupId] } });
+    startPractice('due');
+    window.scrollTo(0, 0);
   }
 
   // Al abrir la app: completar las frases que quedaron a medias o fallaron (p. ej. sin conexión).
@@ -305,13 +334,40 @@ export function App({ db }) {
           : html`<${Phrases} db=${db} onChange=${onChange} version=${version} onOpenUnit=${openUnit} />`}
       `}
       ${tab === 'list' &&
-      html`<${WordList}
-        db=${db}
-        onChange=${onChange}
-        version=${version}
-        onWrite=${(ids) => startPractice('write', ids)}
-        onPractice=${(ids) => startPractice('free', ids)}
-      />`}
+      html`
+        <div className="segmented" role="tablist" aria-label="Palabras o grupos">
+          ${LIST_SECTIONS.map(
+            (s) => html`
+              <button
+                key=${s.id}
+                role="tab"
+                aria-selected=${listSection === s.id}
+                className=${listSection === s.id ? 'active' : ''}
+                onClick=${() => setListSection(s.id)}
+              >
+                ${s.label}
+              </button>
+            `,
+          )}
+        </div>
+        ${listSection === 'groups'
+          ? html`<${Groups}
+              db=${db}
+              version=${version}
+              onChange=${onChange}
+              onStudy=${studyGroup}
+              onShowWords=${showGroupWords}
+            />`
+          : html`<${WordList}
+              db=${db}
+              onChange=${onChange}
+              version=${version}
+              onWrite=${(ids) => startPractice('write', ids)}
+              onPractice=${(ids) => startPractice('free', ids)}
+              groupFilter=${existingGroups.includes(Number(listGroup)) || listGroup === '-' ? listGroup : ''}
+              onGroupFilter=${setListGroup}
+            />`}
+      `}
     </main>
 
     ${!addOpen &&

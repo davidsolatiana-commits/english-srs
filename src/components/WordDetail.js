@@ -3,6 +3,7 @@ import { html } from '../lib/html.js';
 import { translate } from '../lib/translate.js';
 import { fetchExamples, searchImages, toStoredImage } from '../lib/media.js';
 import { DictLink, SpeakButton } from './WordTools.js';
+import { groupLabel, groupOptions } from '../lib/groups.js';
 
 // ---------- Imagen ----------
 
@@ -281,6 +282,50 @@ function ExamplesSection({ db, word, examples, onSaved }) {
   `;
 }
 
+// ---------- Grupos ----------
+
+function GroupsSection({ db, word, onSaved }) {
+  const groups = db.listGroups();
+  const mine = new Set(db.wordGroupMap()[word.id] ?? []);
+  const byId = new Map(groups.map((g) => [g.id, g]));
+
+  async function add(value) {
+    let id = value;
+    if (value === 'new') {
+      const name = prompt('Nombre del grupo nuevo:');
+      if (!name?.trim()) return;
+      id = await db.createGroup(name.trim());
+    }
+    await db.addToGroup([word.id], Number(id));
+    onSaved();
+  }
+
+  async function remove(id) {
+    await db.removeFromGroup([word.id], id);
+    onSaved();
+  }
+
+  return html`
+    <section className="detail-section">
+      <h3>Grupos</h3>
+      <div className="chips">
+        ${[...mine].map((id) => byId.get(id)).filter(Boolean).map(
+          (g) => html`<button key=${g.id} className="chip small selected" title="Quitar de este grupo" onClick=${() => remove(g.id)}>
+            ${groupLabel(g)} ✕
+          </button>`,
+        )}
+        <select className="group-add" value="" onChange=${(e) => e.target.value && add(e.target.value)} aria-label="Añadir a un grupo">
+          <option value="">＋ Añadir a grupo…</option>
+          ${groupOptions(groups)
+            .filter((o) => !mine.has(Number(o.value)))
+            .map((o) => html`<option key=${o.value} value=${o.value}>${o.label}</option>`)}
+          <option value="new">＋ Grupo nuevo…</option>
+        </select>
+      </div>
+    </section>
+  `;
+}
+
 // ---------- Ficha ----------
 
 export function WordDetail({ db, wordId, onClose, onChange }) {
@@ -309,7 +354,7 @@ export function WordDetail({ db, wordId, onClose, onChange }) {
       <div className="modal detail" role="dialog" aria-modal="true" aria-label=${`Ficha de ${word.word_en}`}>
         <button className="icon-btn modal-close" onClick=${onClose} aria-label="Cerrar">✕</button>
         <h2>${word.word_en} <${SpeakButton} text=${word.word_en} /></h2>
-        <p className="detail-translation">${word.translation_es}</p>
+        <p className="detail-translation">${word.translation_es || 'Sin traducir todavía'}</p>
         <div className="meta">
           <${DictLink} word=${word.word_en} />
           ${word.cefr_level && html`<span className="tag level">${word.cefr_level}</span>`}
@@ -318,6 +363,7 @@ export function WordDetail({ db, wordId, onClose, onChange }) {
         </div>
         <${ImageSection} key=${'img' + rev} db=${db} word=${word} onSaved=${refresh} />
         <${ExamplesSection} db=${db} word=${word} examples=${examples} onSaved=${refresh} />
+        <${GroupsSection} db=${db} word=${word} onSaved=${refresh} />
       </div>
     </div>
   `;

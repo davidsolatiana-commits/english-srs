@@ -7,6 +7,7 @@ import { SyncCard } from './Sync.js';
 import { DictLink, SpeakButton } from './WordTools.js';
 import { WordDetail } from './WordDetail.js';
 import { MediaFill } from './MediaFill.js';
+import { groupOptions } from '../lib/groups.js';
 
 // Filtros del listado. '' = todas; '-' = sin ese dato.
 const STATES = [
@@ -34,28 +35,63 @@ function matchesState(w, state, today) {
 
 const matchesField = (value, wanted) => !wanted || (wanted === '-' ? !value : value === wanted);
 
-export function WordList({ db, onChange, version, onWrite, onPractice }) {
+const PAGE = 150; // con listas de miles de palabras, se pintan por tandas
+
+export function WordList({ db, onChange, version, onWrite, onPractice, groupFilter = '', onGroupFilter }) {
   const [query, setQuery] = useState('');
   const [level, setLevel] = useState('');
   const [category, setCategory] = useState('');
   const [state, setState] = useState('');
+  const [limit, setLimit] = useState(PAGE);
   // null = sin modo selección; Set de ids en modo selección.
   const [selected, setSelected] = useState(null);
   const [detailId, setDetailId] = useState(null);
   const words = useMemo(() => db.listWords(), [db, version]);
   const exampleCounts = useMemo(() => db.exampleCounts(), [db, version]);
+  const groups = useMemo(() => db.listGroups(), [db, version]);
+  const grouped = useMemo(() => db.wordGroupMap(), [db, version]);
+  // Palabras del grupo elegido (con sus subgrupos), en el orden de la lista importada.
+  const groupIds = useMemo(
+    () => (groupFilter && groupFilter !== '-' ? db.groupWordIds(Number(groupFilter)) : null),
+    [db, version, groupFilter],
+  );
   const today = todayISO();
   const exampleTotal = (w) => (exampleCounts[w.id] || 0) + (w.example_sentence ? 1 : 0);
 
   const q = query.trim().toLowerCase();
-  const visible = words.filter(
+  const inGroup = groupIds ? new Set(groupIds) : null;
+  let visible = words.filter(
     (w) =>
       (!q || w.word_en.toLowerCase().includes(q) || w.translation_es.toLowerCase().includes(q)) &&
       matchesField(w.cefr_level, level) &&
       matchesField(w.category, category) &&
-      matchesState(w, state, today),
+      matchesState(w, state, today) &&
+      (!inGroup || inGroup.has(w.id)) &&
+      (groupFilter !== '-' || !grouped[w.id]),
   );
-  const filtering = q || level || category || state;
+  if (groupIds) {
+    const pos = new Map(groupIds.map((id, i) => [id, i]));
+    visible = visible.sort((a, b) => pos.get(a.id) - pos.get(b.id));
+  }
+  const filtering = q || level || category || state || groupFilter;
+  const currentGroup = groups.find((g) => String(g.id) === String(groupFilter));
+
+  async function addSelectedToGroup(value) {
+    let groupId = value;
+    if (value === 'new') {
+      const name = prompt('Nombre del grupo nuevo:');
+      if (!name?.trim()) return;
+      groupId = await db.createGroup(name.trim());
+    }
+    await db.addToGroup(selectedIds, Number(groupId));
+    onChange();
+  }
+
+  async function removeSelectedFromGroup() {
+    await db.removeFromGroup(selectedIds, Number(groupFilter));
+    setSelected(new Set());
+    onChange();
+  }
 
   async function remove(w) {
     if (!confirm(`¿Borrar «${w.word_en}»?`)) return;
@@ -94,7 +130,12 @@ export function WordList({ db, onChange, version, onWrite, onPractice }) {
   }
 
   const backup = html`
-    <${MediaFill} db=${db} words=${words} exampleCounts=${exampleCounts} onChange=${onChange} />
+    <${MediaFill}
+      db=${db}
+      words=${words.filter((w) => w.import_order == null || w.first_review_date)}
+      exampleCounts=${exampleCounts}
+      onChange=${onChange}
+    />
     <${SyncCard} /><${Backup} db=${db} onChange=${onChange} wordCount=${words.length} />
     ${detailId &&
     html`<${WordDetail} key=${detailId} db=${db} wordId=${detailId} onClose=${() => setDetailId(null)} onChange=${onChange} />`}
@@ -140,6 +181,12 @@ export function WordList({ db, onChange, version, onWrite, onPractice }) {
       </div>
 
       <div className="practice-settings list-filters">
+        ${groups.length > 0 &&
+        filterSelect('Grupo', groupFilter, (v) => onGroupFilter?.(v), [
+          { value: '', label: 'Todos' },
+          ...groupOptions(groups),
+          { value: '-', label: 'Sin grupo' },
+        ])}
         ${filterSelect('Nivel', level, setLevel, withNone(CEFR_LEVELS, 'Sin nivel'))}
         ${filterSelect('Tipo', category, setCategory, withNone(CATEGORIES, 'Sin tipo'))}
         ${filterSelect('Mostrar', state, setState, STATES.map((s) => ({ value: s.id, label: s.label })))}
@@ -152,6 +199,7 @@ export function WordList({ db, onChange, version, onWrite, onPractice }) {
             setLevel('');
             setCategory('');
             setState('');
+            onGroupFilter?.('');
           }}
         >
           Quitar filtros
@@ -175,6 +223,21 @@ export function WordList({ db, onChange, version, onWrite, onPractice }) {
             </button>
             ${anyActive && html`<button className="btn small" onClick=${() => pauseSelected(true)}>⏸ Pausar</button>`}
             ${anyPaused && html`<button className="btn small" onClick=${() => pauseSelected(false)}>▶ Reanudar</button>`}
+            <select
+              className="group-add"
+              value=""
+              disabled=${!selectedIds.length}
+              onChange=${(e) => e.target.value && addSelectedToGroup(e.target.value)}
+              aria-label="Añadir a un grupo"
+            >
+              <option value="">📁 Añadir a grupo…</option>
+              ${groupOptions(groups).map((o) => html`<option key=${o.value} value=${o.value}>${o.label}</option>`)}
+              <option value="new">＋ Grupo nuevo…</option>
+            </select>
+            ${currentGroup &&
+            html`<button className="btn small" disabled=${!selectedIds.length} onClick=${removeSelectedFromGroup}>
+              Quitar de «${currentGroup.name}»
+            </button>`}
           </span>
           <p className="muted selection-note">
             Practicar y escribir no cambian tus fechas de repaso. Las palabras en pausa no salen en ninguna práctica
@@ -186,7 +249,7 @@ export function WordList({ db, onChange, version, onWrite, onPractice }) {
       ${visible.length === 0 && html`<div className="card empty">Ninguna palabra coincide con los filtros.</div>`}
 
       <ul className="word-list">
-        ${visible.map((w) => {
+        ${visible.slice(0, limit).map((w) => {
           const due = w.next_review_date <= today;
           const isSelected = selected?.has(w.id);
           return html`
@@ -216,7 +279,9 @@ export function WordList({ db, onChange, version, onWrite, onPractice }) {
                 <div>
                   <strong className="word-open" title="Ver ficha: imagen y ejemplos">${w.word_en}</strong>
                   <${SpeakButton} text=${w.word_en} />
-                  <span className="muted"> — ${w.translation_es}</span>
+                  ${w.translation_es
+                    ? html`<span className="muted"> — ${w.translation_es}</span>`
+                    : html`<span className="warn-text"> — sin traducir</span>`}
                 </div>
                 ${w.example_sentence &&
                 html`<div className="example">${w.example_sentence} <${SpeakButton} text=${w.example_sentence} /></div>`}
@@ -262,6 +327,12 @@ export function WordList({ db, onChange, version, onWrite, onPractice }) {
           `;
         })}
       </ul>
+      ${visible.length > limit &&
+      html`<div className="empty-actions">
+        <button className="btn" onClick=${() => setLimit(limit + PAGE * 2)}>
+          Mostrar más (${visible.length - limit} restantes)
+        </button>
+      </div>`}
     </section>
     ${backup}
   `;

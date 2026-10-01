@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { html } from '../lib/html.js';
 import { CATEGORIES, CEFR_LEVELS } from '../lib/db.js';
 import { DEFAULT_SETTINGS, isStudyFiltered } from '../lib/settings.js';
+import { flattenTree, groupLabel } from '../lib/groups.js';
 
 // '' = palabras sin ese dato (ver studyWhere en db.js).
 const GROUPS = [
@@ -10,22 +11,31 @@ const GROUPS = [
   { key: 'sources', label: 'Fuente', none: 'Sin fuente', options: (db) => db.sources() },
 ];
 
-export function studySummary(study) {
-  const parts = GROUPS.flatMap((g) =>
-    study[g.key].length ? [study[g.key].map((v) => (v === '' ? g.none.toLowerCase() : v)).join(' o ')] : [],
-  );
+export function studySummary(study, groups = []) {
+  const names = (study.groups ?? [])
+    .map((id) => groups.find((g) => g.id === id))
+    .filter(Boolean)
+    .map(groupLabel);
+  const parts = [
+    ...(names.length ? [names.join(' o ')] : []),
+    ...GROUPS.flatMap((g) =>
+      study[g.key].length ? [study[g.key].map((v) => (v === '' ? g.none.toLowerCase() : v)).join(' o ')] : [],
+    ),
+  ];
   return parts.join(' · ');
 }
 
-// "🎯 Qué palabras estudiar": filtro por nivel, tipo y fuente para toda la práctica.
+// "🎯 Qué palabras estudiar": filtro por grupo, nivel, tipo y fuente para toda la práctica.
 export function StudyFilter({ db, study, onChange }) {
   const [open, setOpen] = useState(false);
   const filtered = isStudyFiltered(study);
   const count = db.countStudy(study);
   const paused = db.countWords() - db.countStudy({});
+  const groups = db.listGroups();
+  const chosenGroups = study.groups ?? [];
 
   function toggle(key, value) {
-    const list = study[key];
+    const list = study[key] ?? [];
     onChange({ ...study, [key]: list.includes(value) ? list.filter((v) => v !== value) : [...list, value] });
   }
 
@@ -34,9 +44,9 @@ export function StudyFilter({ db, study, onChange }) {
       <div className="study-filter-head">
         <span>
           🎯 ${filtered
-            ? html`Estudiando: <strong>${studySummary(study)}</strong>`
+            ? html`Estudiando: <strong>${studySummary(study, groups)}</strong>`
             : html`Estudiando: <strong>todas las palabras</strong>`}
-          <span className="muted"> (${count}${paused > 0 ? `, ${paused} en pausa` : ''})</span>
+          <span className="muted"> (${count}${paused > 0 ? `, ${paused} en pausa o sin traducir` : ''})</span>
         </span>
         <span className="study-filter-actions">
           ${filtered &&
@@ -50,6 +60,25 @@ export function StudyFilter({ db, study, onChange }) {
       ${open &&
       html`
         <div className="study-filter-body">
+          ${groups.length > 0 &&
+          html`<div className="study-group">
+            <span className="study-group-label">Grupo</span>
+            <div className="chips">
+              ${flattenTree(groups).map(
+                (g) => html`
+                  <button
+                    key=${g.id}
+                    className=${'chip small' + (chosenGroups.includes(g.id) ? ' selected' : '') + (g.depth ? ' sub' : '')}
+                    aria-pressed=${chosenGroups.includes(g.id)}
+                    onClick=${() => toggle('groups', g.id)}
+                    title=${`${g.total} palabras`}
+                  >
+                    ${g.depth ? '↳ ' : ''}${groupLabel(g)}
+                  </button>
+                `,
+              )}
+            </div>
+          </div>`}
           ${GROUPS.map((g) => {
             const options = g.options(db);
             if (g.key === 'sources' && options.length === 0) return null;

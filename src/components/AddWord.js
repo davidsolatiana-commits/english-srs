@@ -4,6 +4,7 @@ import { todayISO } from '../lib/dates.js';
 import { CATEGORIES, CEFR_LEVELS } from '../lib/db.js';
 import { translateWord } from '../lib/translate.js';
 import { enrichWord } from '../lib/media.js';
+import { groupOptions } from '../lib/groups.js';
 import { DictLink, SpeakButton } from './WordTools.js';
 
 const EMPTY = { word_en: '', translation_es: '', example_sentence: '', category: '', cefr_level: '' };
@@ -39,6 +40,9 @@ export function AddWord({ db, onChange, version, settings, onSettings }) {
   const [form, setForm] = useState(EMPTY);
   // La fuente se conserva entre palabras: normalmente añades varias del mismo vídeo.
   const [source, setSource] = useState('');
+  // El grupo también se conserva entre palabras.
+  const [group, setGroup] = useState('');
+  const groups = useMemo(() => db.listGroups(), [db, version]);
   const [message, setMessage] = useState(null);
   // Traducción automática de la palabra actual: { word, status: 'loading'|'done'|'error', best, alternatives, error }
   const [suggestion, setSuggestion] = useState(null);
@@ -94,6 +98,14 @@ export function AddWord({ db, onChange, version, settings, onSettings }) {
       return;
     }
     const autoTranslated = auto && !manualTranslation.current;
+    const duplicate = db.findWord(word_en);
+    if (duplicate) {
+      setMessage({
+        type: 'error',
+        text: `Ya tienes «${duplicate.word_en}»${duplicate.translation_es ? ` (${duplicate.translation_es})` : ''}. Búscala en Palabras.`,
+      });
+      return;
+    }
 
     // Enter antes de que llegue la traducción: se espera a ella.
     if (!translation_es) {
@@ -137,6 +149,7 @@ export function AddWord({ db, onChange, version, settings, onSettings }) {
         },
         todayISO(),
       );
+      if (group && groups.some((g) => String(g.id) === group)) await db.addToGroup([id], Number(group));
       setMessage({
         type: 'ok',
         text: `Añadida: «${word_en}» = «${translation_es}»${autoTranslated ? ' (traducción automática)' : ''}`,
@@ -268,6 +281,15 @@ export function AddWord({ db, onChange, version, settings, onSettings }) {
           />
           <datalist id="sources">${sources.map((s) => html`<option key=${s} value=${s} />`)}</datalist>
         </label>
+
+        ${groups.length > 0 &&
+        html`<label className="field">
+          <span>Grupo</span>
+          <select value=${group} onChange=${(e) => setGroup(e.target.value)}>
+            <option value="">— Ninguno</option>
+            ${groupOptions(groups).map((o) => html`<option key=${o.value} value=${o.value}>${o.label}</option>`)}
+          </select>
+        </label>`}
       </details>
 
       <div className="actions">
