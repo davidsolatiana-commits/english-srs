@@ -124,6 +124,12 @@ export function WordList({ db, onChange, version, onWrite, onPractice, groupFilt
   const anyPaused = selectedWords.some((w) => w.suspended);
   const anyActive = selectedWords.some((w) => !w.suspended);
 
+  async function markKnown() {
+    await db.markKnown(selectedIds, today);
+    setSelected(new Set());
+    onChange();
+  }
+
   async function pauseSelected(paused) {
     await setPaused(selectedIds, paused);
     setSelected(new Set());
@@ -221,6 +227,14 @@ export function WordList({ db, onChange, version, onWrite, onPractice, groupFilt
             <button className="btn small" disabled=${!selectedIds.length} onClick=${() => onWrite(selectedIds)}>
               ✍️ Escribir
             </button>
+            <button
+              className="btn small"
+              disabled=${!selectedIds.length}
+              title="Las das por dominadas: no entran como nuevas y solo vuelven en 1-2 meses para comprobarlo"
+              onClick=${markKnown}
+            >
+              ✓ Ya las sé
+            </button>
             ${anyActive && html`<button className="btn small" onClick=${() => pauseSelected(true)}>⏸ Pausar</button>`}
             ${anyPaused && html`<button className="btn small" onClick=${() => pauseSelected(false)}>▶ Reanudar</button>`}
             <select
@@ -240,8 +254,8 @@ export function WordList({ db, onChange, version, onWrite, onPractice, groupFilt
             </button>`}
           </span>
           <p className="muted selection-note">
-            Practicar y escribir no cambian tus fechas de repaso. Las palabras en pausa no salen en ninguna práctica
-            hasta que las reanudes.
+            Practicar y escribir no cambian tus fechas de repaso. «Ya las sé» las da por dominadas (vuelven en 1-2
+            meses para comprobarlo). Las palabras en pausa no salen en ninguna práctica hasta que las reanudes.
           </p>
         </div>
       `}
