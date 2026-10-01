@@ -125,12 +125,25 @@ const loadNlp = () => (nlpPromise ??= import('compromise').then((m) => m.default
 // Uso gramatical de la palabra en la frase: Verb, Noun, Adjective, Adverb u Other.
 function usageIn(nlp, sentence, pattern) {
   const doc = nlp(sentence);
-  for (const t of doc.json({ terms: { normal: true } })[0]?.terms ?? []) {
+  const terms = doc.json({ terms: { normal: true } }).flatMap((s) => s.terms ?? []);
+  for (const [i, t] of terms.entries()) {
     if (!pattern.test(t.text)) continue;
+    // "Bill Nye…", "House is a doctor": nombre propio, no la palabra que se aprende.
+    if (['Person', 'ProperNoun', 'Place', 'Organization'].some((x) => t.tags.includes(x))) return 'Proper';
+    if (i > 0 && /^\p{Lu}/u.test(t.text)) return 'Proper';
     for (const tag of ['Verb', 'Noun', 'Adjective', 'Adverb']) if (t.tags.includes(tag)) return tag;
     return 'Other';
   }
   return 'Other';
+}
+
+// Frases donde una palabra en minúscula aparece en mayúscula a mitad de frase (un nombre propio).
+export function looksLikeName(sentence, word) {
+  if (/[A-Z]/.test(word)) return false;
+  for (const m of sentence.matchAll(new RegExp(wordPattern(word).source, 'gi'))) {
+    if (m.index > 0 && /^[A-Z]/.test(m[0])) return true;
+  }
+  return false;
 }
 
 export async function diverseExamples(word, n = 3) {
@@ -151,11 +164,19 @@ export async function diverseExamples(word, n = 3) {
   const multiword = word.word_en.trim().includes(' ');
   const pattern = multiword ? null : wordPattern(word.word_en);
   const nlp = pattern ? await loadNlp() : null;
-  const tagged = candidates.map((c) => ({
-    ...c,
-    use: pattern ? usageIn(nlp, c.en, pattern) : 'Other',
-    len: c.en.split(/\s+/).length,
-  }));
+  const tagged = candidates
+    .map((c) => ({
+      ...c,
+      use: pattern ? usageIn(nlp, c.en, pattern) : 'Other',
+      len: c.en.split(/\s+/).length,
+    }))
+    .filter((c) => c.use !== 'Proper' && !looksLikeName(c.en, word.word_en));
+  // Si la palabra también es un nombre ("Bill", "Mark"…), tampoco valen las frases que empiezan por
+  // ella: al principio de frase no se distingue "Bill called me" de "Bills arrived".
+  if (candidates.some((c) => looksLikeName(c.en, word.word_en))) {
+    const start = new RegExp(`^${wordPattern(word.word_en).source}`, 'i');
+    for (let i = tagged.length - 1; i >= 0; i--) if (start.test(tagged[i].en)) tagged.splice(i, 1);
+  }
   const picked = [];
   const uses = new Set();
   // Primero, una frase por cada uso distinto (p. ej. "book" como sustantivo y como verbo).
@@ -185,14 +206,24 @@ export async function runMediaJob(db, ids, { images = true, examples = true, onC
   if (job?.running) return job;
   const tried = loadTried();
   const exampleCounts = db.exampleCounts();
-  const queue = db
-    .wordsByIds(ids)
-    .filter(
-      (w) =>
-        w.translation_es &&
-        ((images && !w.image && !tried.has(`${w.id}:img`) && !NO_IMAGE_TOPICS.has(topicOf(w).name)) ||
-          (examples && !exampleCounts[w.id] && !tried.has(`${w.id}:ex`))),
-    );
+  const words = db.wordsByIds(ids);
+  // Ejemplos ya guardados que usan la palabra como nombre propio ("Bill Nye…"): se rehacen.
+  const nameFix = new Set(
+    words
+      .filter(
+        (w) =>
+          (w.example_sentence && looksLikeName(w.example_sentence, w.word_en)) ||
+          (exampleCounts[w.id] && db.listExamples(w.id).some((e) => looksLikeName(e.text_en, w.word_en))),
+      )
+      .map((w) => w.id),
+  );
+  const wantsExamples = (w) => (!exampleCounts[w.id] && !tried.has(`${w.id}:ex`)) || nameFix.has(w.id);
+  const queue = words.filter(
+    (w) =>
+      w.translation_es &&
+      ((images && !w.image && !tried.has(`${w.id}:img`) && !NO_IMAGE_TOPICS.has(topicOf(w).name)) ||
+        (examples && wantsExamples(w))),
+  );
   job = { total: queue.length, done: 0, images: 0, examples: 0, running: true, stop: false, error: null };
   emit();
 
@@ -205,7 +236,14 @@ export async function runMediaJob(db, ids, { images = true, examples = true, onC
         job.images++;
       } else tried.add(`${w.id}:img`);
     }
-    if (examples && !exampleCounts[w.id] && !tried.has(`${w.id}:ex`)) {
+    if (examples && wantsExamples(w)) {
+      if (nameFix.has(w.id)) {
+        for (const e of db.listExamples(w.id)) if (e.source === 'auto') await db.deleteExample(e.id);
+        if (w.example_sentence && looksLikeName(w.example_sentence, w.word_en)) {
+          await db.updateWord(w.id, { example_sentence: null, example_es: null });
+          w = { ...w, example_sentence: null };
+        }
+      }
       try {
         const list = await diverseExamples(w, 3);
         if (list.length === 0) tried.add(`${w.id}:ex`);
