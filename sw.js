@@ -41,6 +41,8 @@ const APP_FILES = [
   './src/lib/media.js',
   './src/lib/importer.js',
   './src/lib/groups.js',
+  './src/lib/oxfordTopics.js',
+  './src/lib/bulkMedia.js',
   './src/components/Groups.js',
   './src/components/ImportList.js',
   './src/components/UnitLink.js',
