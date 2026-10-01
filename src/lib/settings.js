@@ -30,11 +30,13 @@ export const DEFAULT_SETTINGS = {
   writeReps: 5,
   writeAudio: true,
   // Qué palabras estudiar (repaso de hoy, práctica libre y escritura). Listas vacías = todas.
-  study: { levels: [], categories: [], sources: [] },
+  study: { groups: [], levels: [], categories: [], sources: [] },
 };
 
 export function isStudyFiltered(study) {
-  return Boolean(study && (study.levels.length || study.categories.length || study.sources.length));
+  return Boolean(
+    study && (study.groups?.length || study.levels.length || study.categories.length || study.sources.length),
+  );
 }
 
 export function loadSettings() {

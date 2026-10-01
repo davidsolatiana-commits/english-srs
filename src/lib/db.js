@@ -11,8 +11,8 @@ const IDB_NAME = 'english-srs';
 const IDB_STORE = 'files';
 const DB_KEY = 'main.sqlite';
 
-export const CATEGORIES = ['verbo', 'sustantivo', 'adjetivo', 'phrasal verb', 'expresión', 'otro'];
-export const CEFR_LEVELS = ['A2', 'B1', 'B2'];
+export const CATEGORIES = ['verbo', 'sustantivo', 'adjetivo', 'adverbio', 'preposición', 'phrasal verb', 'expresión', 'otro'];
+export const CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1'];
 
 // Cada entrada lleva la base de datos de la versión i a la i+1 (PRAGMA user_version).
 const MIGRATIONS = [
@@ -104,7 +104,67 @@ const MIGRATIONS = [
   );
   CREATE INDEX idx_word_examples_word ON word_examples (word_id);
   `,
+  // v8: grupos y subgrupos (parent_id) de palabras; una palabra puede estar en varios.
+  // words se reconstruye sin las restricciones CHECK de categoría y nivel (para admitir A1, C1 y
+  // nuevas categorías) y con import_order: posición en una lista importada (NULL = añadida a mano;
+  // las añadidas a mano se aprenden antes que las de las listas).
+  `
+  CREATE TABLE words_new (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    word_en          TEXT    NOT NULL,
+    translation_es   TEXT    NOT NULL,
+    example_sentence TEXT,
+    category         TEXT,
+    cefr_level       TEXT,
+    source           TEXT,
+    date_added       TEXT    NOT NULL,
+    ease_factor      REAL    NOT NULL DEFAULT ${INITIAL_EASE},
+    interval_days    INTEGER NOT NULL DEFAULT 0,
+    repetitions      INTEGER NOT NULL DEFAULT 0,
+    next_review_date TEXT    NOT NULL,
+    last_review_date TEXT,
+    first_review_date TEXT,
+    suspended        INTEGER NOT NULL DEFAULT 0,
+    example_es       TEXT,
+    image            TEXT,
+    image_credit     TEXT,
+    import_order     INTEGER
+  );
+  INSERT INTO words_new (id, word_en, translation_es, example_sentence, category, cefr_level, source, date_added,
+                         ease_factor, interval_days, repetitions, next_review_date, last_review_date,
+                         first_review_date, suspended, example_es, image, image_credit)
+    SELECT id, word_en, translation_es, example_sentence, category, cefr_level, source, date_added,
+           ease_factor, interval_days, repetitions, next_review_date, last_review_date,
+           first_review_date, suspended, example_es, image, image_credit
+      FROM words;
+  DROP TABLE words;
+  ALTER TABLE words_new RENAME TO words;
+  CREATE INDEX idx_words_next_review ON words (next_review_date);
+  CREATE TABLE vocab_groups (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    parent_id  INTEGER,
+    emoji      TEXT,
+    position   INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE word_groups (
+    word_id  INTEGER NOT NULL,
+    group_id INTEGER NOT NULL,
+    PRIMARY KEY (word_id, group_id)
+  );
+  CREATE INDEX idx_word_groups_group ON word_groups (group_id);
+  `,
 ];
+
+// Ids de un grupo y todos sus subgrupos (subconsulta SQL). `list` = ids separados por comas.
+const groupTreeSql = (list) => `
+  WITH RECURSIVE tree(id) AS (
+    SELECT id FROM vocab_groups WHERE id IN (${list})
+    UNION SELECT g.id FROM vocab_groups g JOIN tree ON g.parent_id = tree.id
+  ) SELECT id FROM tree`;
+
+const intList = (ids) => ids.map(Number).filter(Number.isInteger).join(',');
 
 // Campos de una palabra que se pueden cambiar después de añadirla.
 const WORD_FIELDS = ['example_sentence', 'example_es', 'image', 'image_credit'];
@@ -112,7 +172,10 @@ const WORD_FIELDS = ['example_sentence', 'example_es', 'image', 'image_credit'];
 // Filtro de estudio { levels, categories, sources }: cada lista vacía = sin filtrar por ella;
 // '' dentro de una lista = palabras sin ese dato. Las pausadas siempre quedan fuera.
 function studyWhere(filter = {}) {
-  const parts = ['suspended = 0'];
+  // Sin traducción todavía (lista importada a medio traducir): no se puede practicar.
+  const parts = ['suspended = 0', "translation_es <> ''"];
+  const groups = intList(filter.groups ?? []);
+  if (groups) parts.push(`id IN (SELECT word_id FROM word_groups WHERE group_id IN (${groupTreeSql(groups)}))`);
   const params = {};
   const add = (column, values, prefix) => {
     if (!values?.length) return;
@@ -356,6 +419,10 @@ function createStore(SQL, initialDb) {
       return id;
     },
 
+    findWord(wordEn) {
+      return all('SELECT * FROM words WHERE lower(word_en) = lower(:w)', { ':w': wordEn.trim() })[0] ?? null;
+    },
+
     getWord(id) {
       return all('SELECT * FROM words WHERE id = :id', { ':id': id })[0] ?? null;
     },
@@ -372,6 +439,192 @@ function createStore(SQL, initialDb) {
     async deleteWord(id) {
       db.run('DELETE FROM words WHERE id = :id', { ':id': id });
       db.run('DELETE FROM word_examples WHERE word_id = :id', { ':id': id });
+      db.run('DELETE FROM word_groups WHERE word_id = :id', { ':id': id });
+      await flush();
+    },
+
+    // ---------- Grupos ----------
+
+    // Todos los grupos con cuántas palabras tienen (contando subgrupos) y su progreso:
+    // nuevas (sin empezar), aprendiendo y dominadas (repaso a 21 días o más).
+    listGroups() {
+      const groups = all('SELECT * FROM vocab_groups ORDER BY position, name COLLATE NOCASE');
+      for (const g of groups) {
+        Object.assign(
+          g,
+          all(
+            `SELECT COUNT(*) AS total,
+                    SUM(first_review_date IS NULL) AS fresh,
+                    SUM(first_review_date IS NOT NULL AND interval_days >= 21) AS mastered,
+                    SUM(suspended) AS paused,
+                    SUM(translation_es = '') AS untranslated
+               FROM words
+              WHERE id IN (SELECT word_id FROM word_groups WHERE group_id IN (${groupTreeSql(g.id)}))`,
+          )[0],
+        );
+        for (const k of ['fresh', 'mastered', 'paused', 'untranslated']) g[k] ??= 0;
+      }
+      return groups;
+    },
+
+    groupIds() {
+      return all('SELECT id FROM vocab_groups').map((r) => r.id);
+    },
+
+    async createGroup(name, parentId = null, emoji = null) {
+      const position = all('SELECT COALESCE(MAX(position), 0) + 1 AS p FROM vocab_groups')[0].p;
+      db.run(
+        `INSERT INTO vocab_groups (name, parent_id, emoji, position, created_at) VALUES (:n, :p, :e, :pos, :now)`,
+        { ':n': name, ':p': parentId, ':e': emoji || null, ':pos': position, ':now': new Date().toISOString() },
+      );
+      const id = all('SELECT last_insert_rowid() AS id')[0].id;
+      await flush();
+      return id;
+    },
+
+    async updateGroup(id, { name, emoji, parentId }) {
+      // No se puede mover un grupo dentro de sí mismo o de uno de sus subgrupos.
+      if (parentId != null) {
+        const inside = all(`${groupTreeSql(id)}`).some((r) => r.id === Number(parentId));
+        if (inside) throw new Error('No puedes mover un grupo dentro de sí mismo.');
+      }
+      const sets = [];
+      const params = { ':id': id };
+      if (name !== undefined) (sets.push('name = :n'), (params[':n'] = name));
+      if (emoji !== undefined) (sets.push('emoji = :e'), (params[':e'] = emoji || null));
+      if (parentId !== undefined) (sets.push('parent_id = :p'), (params[':p'] = parentId));
+      if (!sets.length) return;
+      db.run(`UPDATE vocab_groups SET ${sets.join(', ')} WHERE id = :id`, params);
+      await flush();
+    },
+
+    // Borra el grupo y sus subgrupos. Las palabras se conservan, salvo con withWords: entonces se
+    // borran también las que llegaron con una lista importada (nunca las añadidas a mano) y no
+    // están en ningún otro grupo.
+    async deleteGroup(id, { withWords = false } = {}) {
+      const ids = all(groupTreeSql(id)).map((r) => r.id).join(',');
+      db.run('BEGIN');
+      if (withWords) {
+        db.run(
+          `DELETE FROM words WHERE import_order IS NOT NULL
+             AND id IN (SELECT word_id FROM word_groups WHERE group_id IN (${ids}))
+             AND id NOT IN (SELECT word_id FROM word_groups WHERE group_id NOT IN (${ids}))`,
+        );
+        db.run('DELETE FROM word_examples WHERE word_id NOT IN (SELECT id FROM words)');
+      }
+      db.run(`DELETE FROM word_groups WHERE group_id IN (${ids})`);
+      db.run(`DELETE FROM vocab_groups WHERE id IN (${ids})`);
+      db.run('COMMIT');
+      await flush();
+    },
+
+    async addToGroup(wordIds, groupId) {
+      const ids = intList(wordIds);
+      if (!ids) return;
+      db.run(
+        `INSERT OR IGNORE INTO word_groups (word_id, group_id) SELECT id, :g FROM words WHERE id IN (${ids})`,
+        { ':g': groupId },
+      );
+      await flush();
+    },
+
+    async removeFromGroup(wordIds, groupId) {
+      const ids = intList(wordIds);
+      if (!ids) return;
+      // También de sus subgrupos: "quitar de Oxford 3000" la saca de todo ese grupo.
+      db.run(`DELETE FROM word_groups WHERE group_id IN (${groupTreeSql(Number(groupId))}) AND word_id IN (${ids})`);
+      await flush();
+    },
+
+    // { word_id: [group_id, …] } (solo pertenencia directa).
+    wordGroupMap() {
+      const map = {};
+      for (const r of all('SELECT word_id, group_id FROM word_groups')) (map[r.word_id] ??= []).push(r.group_id);
+      return map;
+    },
+
+    // Ids de las palabras de un grupo (con sus subgrupos), en el orden de la lista importada.
+    groupWordIds(groupId) {
+      return all(
+        `SELECT id FROM words WHERE id IN (SELECT word_id FROM word_groups WHERE group_id IN (${groupTreeSql(groupId)}))
+          ORDER BY (import_order IS NOT NULL), import_order, date_added, id`,
+      ).map((r) => r.id);
+    },
+
+    // ---------- Importar listas ----------
+
+    // entries: [{ word_en, translation_es?, cefr_level?, category? }] en el orden de la lista.
+    // Las que ya existen (mismo inglés) no se duplican: se añaden al grupo y se completan sus datos
+    // vacíos. Las nuevas entran como palabras nuevas, a continuación de las listas ya importadas.
+    // subgroupOf(entry) → id de subgrupo (opcional). Devuelve { added, existing }.
+    async importWords(entries, { groupId, source, today, subgroupOf }) {
+      const existing = new Map(all('SELECT id, lower(word_en) AS k FROM words').map((r) => [r.k, r.id]));
+      let order = all('SELECT COALESCE(MAX(import_order), 0) AS m FROM words')[0].m;
+      let added = 0;
+      let already = 0;
+      db.run('BEGIN');
+      try {
+        for (const e of entries) {
+          const key = e.word_en.trim().toLowerCase();
+          let id = existing.get(key);
+          if (id) {
+            already++;
+            db.run(
+              `UPDATE words SET cefr_level = COALESCE(cefr_level, :lv), category = COALESCE(category, :cat),
+                                translation_es = CASE WHEN translation_es = '' THEN :t ELSE translation_es END
+                WHERE id = :id`,
+              { ':lv': e.cefr_level || null, ':cat': e.category || null, ':t': e.translation_es || '', ':id': id },
+            );
+          } else {
+            db.run(
+              `INSERT INTO words (word_en, translation_es, category, cefr_level, source, date_added, next_review_date, import_order)
+               VALUES (:w, :t, :cat, :lv, :src, :today, :today, :ord)`,
+              {
+                ':w': e.word_en.trim(),
+                ':t': e.translation_es || '',
+                ':cat': e.category || null,
+                ':lv': e.cefr_level || null,
+                ':src': source || null,
+                ':today': today,
+                ':ord': ++order,
+              },
+            );
+            id = all('SELECT last_insert_rowid() AS id')[0].id;
+            existing.set(key, id);
+            added++;
+          }
+          db.run('INSERT OR IGNORE INTO word_groups (word_id, group_id) VALUES (:w, :g)', { ':w': id, ':g': groupId });
+          const sub = subgroupOf?.(e);
+          if (sub) db.run('INSERT OR IGNORE INTO word_groups (word_id, group_id) VALUES (:w, :g)', { ':w': id, ':g': sub });
+        }
+        db.run('COMMIT');
+      } catch (err) {
+        db.run('ROLLBACK');
+        throw err;
+      }
+      await flush();
+      return { added, existing: already };
+    },
+
+    // Palabras aún sin traducir (de listas importadas), en orden de lista. Con groupId, solo las de ese grupo.
+    untranslatedWords(groupId = null) {
+      const inGroup = groupId
+        ? `AND id IN (SELECT word_id FROM word_groups WHERE group_id IN (${groupTreeSql(groupId)}))`
+        : '';
+      return all(
+        `SELECT id, word_en, category FROM words WHERE translation_es = '' ${inGroup}
+          ORDER BY (import_order IS NOT NULL), import_order, id`,
+      );
+    },
+
+    // translations: [{ id, translation_es }] en una sola escritura.
+    async setTranslations(translations) {
+      if (!translations.length) return;
+      db.run('BEGIN');
+      for (const t of translations) {
+        db.run('UPDATE words SET translation_es = :t WHERE id = :id', { ':t': t.translation_es, ':id': t.id });
+      }
+      db.run('COMMIT');
       await flush();
     },
 
@@ -473,8 +726,9 @@ function createStore(SQL, initialDb) {
         { ':today': today, ...f.params },
       );
       const fresh = all(
+        // Primero las añadidas a mano y después las de listas importadas, en el orden de la lista.
         `SELECT * FROM words WHERE first_review_date IS NULL AND next_review_date <= :today AND ${f.where}
-          ORDER BY date_added, id LIMIT :quota`,
+          ORDER BY (import_order IS NOT NULL), import_order, date_added, id LIMIT :quota`,
         { ':today': today, ':quota': newQuota(today, newPerDay), ...f.params },
       );
       return { words: [...reviews, ...fresh], newWaiting: countNew(today, filter) - fresh.length };
