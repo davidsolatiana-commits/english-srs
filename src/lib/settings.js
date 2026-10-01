@@ -20,6 +20,9 @@ export const DEFAULT_SETTINGS = {
   mode: 'auto',
   newPerDay: 10,
   autoTranslate: true,
+  // Al añadir una palabra, buscar sola una imagen y ejemplos de uso (src/lib/media.js).
+  autoImage: true,
+  autoExamples: true,
   freeOrder: 'random',
   freeSize: 20,
   writeOrder: 'hard',

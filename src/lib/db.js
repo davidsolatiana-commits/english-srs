@@ -88,7 +88,26 @@ const MIGRATIONS = [
   `
   ALTER TABLE words ADD COLUMN suspended INTEGER NOT NULL DEFAULT 0;
   `,
+  // v7: imagen de la palabra (data URL JPEG reducida, o URL externa) con su autoría, traducción
+  // del ejemplo principal (example_sentence) y ejemplos extra (escritos por ti o buscados).
+  `
+  ALTER TABLE words ADD COLUMN example_es TEXT;
+  ALTER TABLE words ADD COLUMN image TEXT;
+  ALTER TABLE words ADD COLUMN image_credit TEXT;
+  CREATE TABLE word_examples (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    word_id    INTEGER NOT NULL,
+    text_en    TEXT NOT NULL,
+    text_es    TEXT,
+    source     TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual','auto')),
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_word_examples_word ON word_examples (word_id);
+  `,
 ];
+
+// Campos de una palabra que se pueden cambiar después de añadirla.
+const WORD_FIELDS = ['example_sentence', 'example_es', 'image', 'image_credit'];
 
 // Filtro de estudio { levels, categories, sources }: cada lista vacía = sin filtrar por ella;
 // '' dentro de una lista = palabras sin ese dato. Las pausadas siempre quedan fuera.
@@ -332,11 +351,78 @@ function createStore(SQL, initialDb) {
           ':today': today,
         },
       );
+      const id = all('SELECT last_insert_rowid() AS id')[0].id;
+      await flush();
+      return id;
+    },
+
+    getWord(id) {
+      return all('SELECT * FROM words WHERE id = :id', { ':id': id })[0] ?? null;
+    },
+
+    async updateWord(id, fields) {
+      const keys = Object.keys(fields).filter((k) => WORD_FIELDS.includes(k));
+      if (keys.length === 0) return;
+      const params = { ':id': id };
+      for (const k of keys) params[`:${k}`] = fields[k] === '' ? null : fields[k];
+      db.run(`UPDATE words SET ${keys.map((k) => `${k} = :${k}`).join(', ')} WHERE id = :id`, params);
       await flush();
     },
 
     async deleteWord(id) {
       db.run('DELETE FROM words WHERE id = :id', { ':id': id });
+      db.run('DELETE FROM word_examples WHERE word_id = :id', { ':id': id });
+      await flush();
+    },
+
+    // ---------- Ejemplos extra de cada palabra ----------
+
+    listExamples(wordId) {
+      return all('SELECT * FROM word_examples WHERE word_id = :id ORDER BY id', { ':id': wordId });
+    },
+
+    // { word_id: n } para el listado.
+    exampleCounts() {
+      return Object.fromEntries(
+        all('SELECT word_id, COUNT(*) AS n FROM word_examples GROUP BY word_id').map((r) => [r.word_id, r.n]),
+      );
+    },
+
+    async addExample(wordId, { en, es = null, source = 'manual' }) {
+      db.run(
+        `INSERT INTO word_examples (word_id, text_en, text_es, source, created_at)
+         VALUES (:w, :en, :es, :src, :now)`,
+        { ':w': wordId, ':en': en, ':es': es || null, ':src': source, ':now': new Date().toISOString() },
+      );
+      await flush();
+    },
+
+    async deleteExample(id) {
+      db.run('DELETE FROM word_examples WHERE id = :id', { ':id': id });
+      await flush();
+    },
+
+    // Convierte un ejemplo extra en el principal (el que sale en la práctica y en "completar la frase");
+    // el principal anterior pasa a la lista de extras.
+    async makeMainExample(exampleId) {
+      const ex = all('SELECT * FROM word_examples WHERE id = :id', { ':id': exampleId })[0];
+      if (!ex) return;
+      const word = all('SELECT * FROM words WHERE id = :id', { ':id': ex.word_id })[0];
+      db.run('BEGIN');
+      if (word?.example_sentence) {
+        db.run(
+          `INSERT INTO word_examples (word_id, text_en, text_es, source, created_at)
+           VALUES (:w, :en, :es, 'manual', :now)`,
+          { ':w': ex.word_id, ':en': word.example_sentence, ':es': word.example_es, ':now': new Date().toISOString() },
+        );
+      }
+      db.run('UPDATE words SET example_sentence = :en, example_es = :es WHERE id = :w', {
+        ':en': ex.text_en,
+        ':es': ex.text_es,
+        ':w': ex.word_id,
+      });
+      db.run('DELETE FROM word_examples WHERE id = :id', { ':id': exampleId });
+      db.run('COMMIT');
       await flush();
     },
 
