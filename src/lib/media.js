@@ -129,13 +129,16 @@ const IRREGULAR = {
 
 const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-// Expresión que reconoce la palabra y sus formas (achieve → achieved, achieving; give up → gave it up…).
+// Expresión que reconoce la palabra y sus formas (achieve → achieved, achieving; give up → gave it up…),
+// pero no palabras derivadas (happy ≠ happiness, fair ≠ fairly).
 export function wordPattern(word) {
   const tokens = word.toLowerCase().trim().split(/\s+/);
   const form = (t) => {
     if (IRREGULAR[t]) return `(?:${escape(t)}|${IRREGULAR[t]})`;
-    if (t.length <= 3) return `${escape(t)}\\w*`;
-    return `${escape(t.replace(/(e|y)$/, ''))}\\w*`;
+    if (/[^aeiou]y$/.test(t)) return `${escape(t.slice(0, -1))}(?:y|ies|ied|ying|ier|iest)`;
+    if (/e$/.test(t)) return `${escape(t.slice(0, -1))}(?:e|es|ed|ing|er|ers|est)`;
+    const last = escape(t.slice(-1));
+    return `${escape(t)}(?:${last}?(?:s|es|ed|ing|er|ers|est))?`;
   };
   // En los phrasal verbs puede haber hasta dos palabras en medio (give it up).
   return new RegExp(`\\b${tokens.map(form).join('(?:\\s+\\S+){0,2}?\\s+')}\\b`, 'i');
@@ -145,9 +148,10 @@ export function wordPattern(word) {
 export async function fetchExamples(word, limit = 8) {
   const w = word.trim();
   const q = w.includes(' ') ? `"${w}"` : w;
-  const data = await getJSON(
-    `${TATOEBA}?lang=eng&trans:lang=spa&sort=relevance&limit=50&q=${encodeURIComponent(q)}`,
-  );
+  // Mejor frases de longitud media (las más "relevantes" suelen ser de 2-3 palabras).
+  const url = `${TATOEBA}?lang=eng&trans:lang=spa&sort=relevance&limit=50&q=${encodeURIComponent(q)}`;
+  let data = await getJSON(`${url}&word_count=5-16`);
+  if ((data.data ?? []).length < 3) data = await getJSON(url);
   const pattern = wordPattern(w);
   const seen = new Set();
   const all = [];

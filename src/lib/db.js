@@ -348,8 +348,16 @@ function createStore(SQL, initialDb) {
     )[0].n;
   }
 
+  // Durante un batch() (tareas masivas) no se guarda tras cada cambio, sino una vez al final.
+  let batching = 0;
+  let flushPending = false;
+
   // Guarda una instantánea del archivo; las escrituras a IndexedDB van en cola y en orden.
   function flush() {
+    if (batching > 0) {
+      flushPending = true;
+      return Promise.resolve();
+    }
     const data = db.export();
     pendingWrite = pendingWrite.then(() => idbPut(DB_KEY, data));
     writeListeners.forEach((l) => l());
@@ -358,6 +366,39 @@ function createStore(SQL, initialDb) {
 
   return {
     flush,
+
+    // Ejecuta fn (con muchas escrituras) guardando una sola vez al terminar.
+    async batch(fn) {
+      batching++;
+      try {
+        return await fn();
+      } finally {
+        batching--;
+        if (batching === 0 && flushPending) {
+          flushPending = false;
+          await flush();
+        }
+      }
+    },
+
+    // Reordena las palabras nuevas de una lista importada: `ids` en el orden deseado reciben las
+    // mismas posiciones (import_order) que ya ocupaban entre todas, así no adelantan a otras listas.
+    async reorderImported(ids) {
+      const wanted = intList(ids);
+      if (!wanted) return;
+      const imported = new Set(
+        all(`SELECT id FROM words WHERE id IN (${wanted}) AND import_order IS NOT NULL`).map((r) => r.id),
+      );
+      const slots = all(
+        `SELECT import_order AS o FROM words WHERE id IN (${wanted}) AND import_order IS NOT NULL ORDER BY import_order`,
+      ).map((r) => r.o);
+      db.run('BEGIN');
+      ids.filter((id) => imported.has(id)).forEach((id, i) => {
+        db.run('UPDATE words SET import_order = :o WHERE id = :id', { ':o': slots[i], ':id': id });
+      });
+      db.run('COMMIT');
+      await flush();
+    },
 
     onWrite(listener) {
       writeListeners.add(listener);
