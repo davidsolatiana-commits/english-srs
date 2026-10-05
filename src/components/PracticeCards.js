@@ -28,13 +28,21 @@ function English({ word }) {
 // Tras responder: la imagen de la palabra (si tiene) y el ejemplo principal con su traducción.
 function Example({ word }) {
   return html`
-    ${word.image && html`<img className="card-image" src=${word.image} alt="" />`}
+    <${WordImage} word=${word} />
     ${word.example_sentence &&
     html`<div className="example">
       ${word.example_sentence} <${SpeakButton} text=${word.example_sentence} />
       ${word.example_es && html`<div className="example-es">${word.example_es}</div>`}
     </div>`}
   `;
+}
+
+// Imagen de la palabra; si no carga (sin conexión), un aviso en su lugar.
+export function WordImage({ word, className = 'card-image' }) {
+  const [failed, setFailed] = useState(false);
+  if (!word.image) return null;
+  if (failed) return html`<div className=${className + ' image-missing muted'}>🖼 Sin conexión: la imagen no se puede cargar</div>`;
+  return html`<img className=${className} src=${word.image} alt="" onError=${() => setFailed(true)} />`;
 }
 
 // ---------- Tarjetas (te valoras tú) ----------
@@ -121,7 +129,12 @@ export function WriteCard({ word, mode, cloze, isNew, result, onSubmit }) {
             <div className="cloze">${cloze.before}<span className=${'blank' + (answered ? ' filled' : '')}>${answered ? cloze.answer : '_____'}</span>${cloze.after}</div>
             <div className="muted">(${word.translation_es})</div>
           `
-        : html`<div className="front prompt-es">${word.translation_es}</div>`}
+        : mode === 'image'
+          ? html`
+              <${WordImage} word=${word} className="prompt-image" />
+              <div className="muted">¿Qué es en inglés?${answered || hinted ? html` <strong>(${word.translation_es})</strong>` : ''}</div>
+            `
+          : html`<div className="front prompt-es">${word.translation_es}</div>`}
 
       <input
         ref=${input}
@@ -159,7 +172,14 @@ export function WriteCard({ word, mode, cloze, isNew, result, onSubmit }) {
             : html`<${English} word=${word} />`}
           ${mode === 'write'
             ? html`<${Example} word=${word} />`
-            : word.image && html`<img className="card-image" src=${word.image} alt="" />`}
+            : mode === 'image'
+              ? html`<div className="translation">${word.translation_es}</div>
+                  ${word.example_sentence &&
+                  html`<div className="example">
+                    ${word.example_sentence} <${SpeakButton} text=${word.example_sentence} />
+                    ${word.example_es && html`<div className="example-es">${word.example_es}</div>`}
+                  </div>`}`
+              : word.image && html`<img className="card-image" src=${word.image} alt="" />`}
           <div className="word-tools"><${DictLink} word=${word.word_en} /></div>
         </div>
       `}

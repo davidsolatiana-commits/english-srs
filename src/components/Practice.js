@@ -29,7 +29,11 @@ function buildCard(db, item, modeSetting) {
   const { word } = item;
   const distractors = db.distractors(word, 3);
   const cloze = word.example_sentence ? clozeParts(word.example_sentence, word.word_en) : null;
-  const mode = pickMode(modeSetting, word, { canChoice: distractors.length === 3, canCloze: cloze !== null });
+  const mode = pickMode(modeSetting, word, {
+    canChoice: distractors.length === 3,
+    canCloze: cloze !== null,
+    canImage: Boolean(word.image) && navigator.onLine !== false,
+  });
   return {
     mode,
     cloze: mode === 'cloze' ? cloze : null,
@@ -60,7 +64,10 @@ export function Practice({
           words: shuffle(
             wordIds?.length
               ? db.wordsByIds(wordIds)
-              : db.freePracticeWords(settings.freeOrder, settings.freeSize, settings.study),
+              : db.freePracticeWords(settings.freeOrder, settings.freeSize, {
+                  ...settings.study,
+                  withImage: settings.mode === 'image', // modo imagen: solo las que tienen
+                }),
           ),
           newWaiting: 0,
         }
@@ -258,7 +265,7 @@ export function Practice({
 
       ${card.mode === 'choice'
         ? html`<${ChoiceCard} key=${pos} ...${cardProps} options=${card.options} onPick=${pick} />`
-        : card.mode === 'write' || card.mode === 'cloze'
+        : card.mode === 'write' || card.mode === 'cloze' || card.mode === 'image'
           ? html`<${WriteCard} key=${pos} ...${cardProps} mode=${card.mode} cloze=${card.cloze} onSubmit=${submitTyped} />`
           : html`<${FlashCard} key=${pos} ...${cardProps} mode=${card.mode} onReveal=${reveal} />`}
 

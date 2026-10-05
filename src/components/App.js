@@ -24,6 +24,7 @@ import { SyncChip } from './Sync.js';
 import { StudyFilter } from './StudyFilter.js';
 import { WordPicker } from './WordPicker.js';
 import { Groups } from './Groups.js';
+import { ImagePractice } from './ImagePractice.js';
 import { initSync } from '../lib/sync.js';
 import { InstallButton, IOSInstallHint } from './InstallButton.js';
 
@@ -52,6 +53,12 @@ const KINDS = [
   { id: 'due', label: 'Repaso de hoy', short: 'Hoy' },
   { id: 'free', label: 'Práctica libre', short: 'Libre' },
   { id: 'write', label: 'Escritura', short: 'Escritura' },
+  { id: 'images', label: 'Con imágenes', short: 'Imágenes' },
+];
+
+const IMG_MODES = [
+  { id: 'learn', label: '👀 Aprender' },
+  { id: 'guess', label: '✍️ Adivinar' },
 ];
 
 // "a, b, c y 7 más" para las palabras elegidas a mano.
@@ -103,7 +110,41 @@ function PracticeSettings({ db, settings, onChange, kind, onKind, dueCount, pick
     ${!pickedWords &&
     html`<${StudyFilter} db=${db} study=${settings.study} onChange=${(study) => onChange({ ...settings, study })} />`}
 
-    ${kind === 'write'
+    ${kind === 'images'
+      ? html`
+          <div className="segmented small img-modes" role="tablist" aria-label="Modo con imágenes">
+            ${IMG_MODES.map(
+              (m) => html`<button
+                key=${m.id}
+                role="tab"
+                aria-selected=${settings.imgMode === m.id}
+                className=${settings.imgMode === m.id ? 'active' : ''}
+                onClick=${() => onChange({ ...settings, imgMode: m.id })}
+              >
+                ${m.label}
+              </button>`,
+            )}
+          </div>
+          <div className="practice-settings">
+            ${pickButton}
+            ${picked ||
+              html`
+                ${select('Palabras', settings.imgOrder, (v) => ({ imgOrder: v }), orderOptions)}
+                ${select('Cuántas', settings.imgSize, (v) => ({ imgSize: Number(v) }),
+                  FREE_SIZES.map((n) => ({ value: n, label: n === 0 ? 'Todas' : n })))}
+              `}
+            <label className="switch">
+              <input type="checkbox" checked=${settings.writeAudio} onChange=${update((v) => ({ writeAudio: v }))} />
+              Leer en voz alta
+            </label>
+          </div>
+          <p className="free-note muted">
+            ${settings.imgMode === 'guess'
+              ? 'Ves solo la imagen y escribes la palabra en inglés. Necesita conexión para cargar las imágenes y no cambia tus fechas de repaso.'
+              : 'La imagen y debajo la palabra, para asociarlas. Al terminar puedes pasar a adivinarlas. No cambia tus fechas de repaso.'}
+          </p>
+        `
+      : kind === 'write'
       ? html`
           <div className="practice-settings">
             ${pickButton}
@@ -285,7 +326,21 @@ export function App({ db }) {
             startPractice(kind, ids);
           }}
         />`}
-        ${kind === 'write'
+        ${kind === 'images'
+          ? html`<${ImagePractice}
+              key=${[round, settings.imgMode, settings.imgOrder, settings.imgSize, studyKey].join('/')}
+              db=${db}
+              settings=${settings}
+              wordIds=${pickedIds}
+              goTo=${goTo}
+              onModeChange=${(mode, ids) => {
+                changeSettings({ ...settings, imgMode: mode });
+                startPractice('images', ids);
+              }}
+              onRestart=${() => startPractice('images')}
+              onRetry=${(ids) => startPractice('images', ids)}
+            />`
+          : kind === 'write'
           ? html`<${WritingPractice}
               key=${[round, settings.writeOrder, settings.writeWords, settings.writeReps, studyKey].join('/')}
               db=${db}
