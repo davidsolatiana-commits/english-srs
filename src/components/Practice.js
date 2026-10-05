@@ -6,6 +6,7 @@ import { speak } from '../lib/speech.js';
 import { checkAnswer, clozeParts } from '../lib/answers.js';
 import { MODE_LABEL, OUTCOME_GRADES, pickMode, shuffle } from '../lib/modes.js';
 import { ChoiceCard, FlashCard, WriteCard } from './PracticeCards.js';
+import { MasteredToggle } from './WordTools.js';
 import { isStudyFiltered } from '../lib/settings.js';
 
 const GRADE_BY_ID = {
@@ -251,7 +252,16 @@ export function Practice({
   const w = item.word;
   const isNew = !item.relearn && !w.first_review_date;
   const feedback = answered && FEEDBACK[result.outcome];
-  const cardProps = { word: w, isNew, result };
+  // ✓ Dominada: la tarjeta se salta sin valorarla (ya queda programada para dentro de 1-2 meses).
+  function onMastered(on) {
+    onChange();
+    if (!on) return;
+    if (!item.relearn) setStats((s) => ({ ...s, reviewed: s.reviewed + 1 }));
+    setPos(pos + 1);
+    setResult(null);
+  }
+  const corner = html`<${MasteredToggle} key=${w.id + ':' + pos} db=${db} word=${w} onToggle=${onMastered} />`;
+  const cardProps = { word: w, isNew, result, corner };
 
   return html`
     <section className="practice">

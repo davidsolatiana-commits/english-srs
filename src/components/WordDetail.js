@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { html } from '../lib/html.js';
 import { translate } from '../lib/translate.js';
 import { fetchExamples, searchImages, toStoredImage } from '../lib/media.js';
-import { DictLink, SpeakButton } from './WordTools.js';
+import { DictLink, MasteredToggle, SpeakButton } from './WordTools.js';
 import { groupLabel, groupOptions } from '../lib/groups.js';
 
 // ---------- Imagen ----------
@@ -356,6 +356,7 @@ export function WordDetail({ db, wordId, onClose, onChange }) {
         <h2>${word.word_en} <${SpeakButton} text=${word.word_en} /></h2>
         <p className="detail-translation">${word.translation_es || 'Sin traducir todavía'}</p>
         <div className="meta">
+          <${MasteredToggle} key=${'m' + rev} db=${db} word=${word} label=${true} onToggle=${refresh} />
           <${DictLink} word=${word.word_en} />
           ${word.cefr_level && html`<span className="tag level">${word.cefr_level}</span>`}
           ${word.category && html`<span className="tag">${word.category}</span>`}

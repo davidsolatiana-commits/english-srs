@@ -3,6 +3,7 @@ import { html } from '../lib/html.js';
 import { CEFR_LEVELS } from '../lib/db.js';
 import { shuffle } from '../lib/modes.js';
 import { groupOptions } from '../lib/groups.js';
+import { isMastered } from '../lib/sm2.js';
 
 // Cuántas palabras elegir (0 = sin límite).
 export const PICK_SIZES = [5, 10, 15, 20, 0];
@@ -185,6 +186,7 @@ export function WordPicker({ db, kind, initialIds, onStart, onClose }) {
                     <span className="muted"> — ${w.translation_es}</span>
                   </span>
                   ${w.suspended ? html`<span className="tag">⏸</span>` : null}
+                  ${isMastered(w) ? html`<span className="tag ok" title="Dominada">✓</span>` : null}
                   ${w.cefr_level && html`<span className="tag level">${w.cefr_level}</span>`}
                 </label>
               </li>

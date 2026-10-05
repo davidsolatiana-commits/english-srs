@@ -47,11 +47,15 @@ export function WordImage({ word, className = 'card-image' }) {
 
 // ---------- Tarjetas (te valoras tú) ----------
 
-export function FlashCard({ word, mode, isNew, result, onReveal }) {
+// Esquina superior derecha de la tarjeta (el ✓ de "dominada").
+const Corner = ({ children }) => children && html`<div className="card-corner">${children}</div>`;
+
+export function FlashCard({ word, mode, isNew, result, onReveal, corner }) {
   const revealed = result !== null;
   const toSpanish = mode === 'flash-en';
   return html`
     <div className="card flashcard">
+      <${Corner}>${corner}<//>
       <${Tags} word=${word} isNew=${isNew} />
       ${toSpanish ? html`<${English} word=${word} />` : html`<div className="front prompt-es">${word.translation_es}</div>`}
 
@@ -76,10 +80,11 @@ export function FlashCard({ word, mode, isNew, result, onReveal }) {
 
 // ---------- Opción múltiple (inglés → español) ----------
 
-export function ChoiceCard({ word, options, isNew, result, onPick }) {
+export function ChoiceCard({ word, options, isNew, result, onPick, corner }) {
   const answered = result !== null;
   return html`
     <div className="card flashcard">
+      <${Corner}>${corner}<//>
       <${Tags} word=${word} isNew=${isNew} />
       <${English} word=${word} />
       <div className="choices">
@@ -107,7 +112,7 @@ export function ChoiceCard({ word, options, isNew, result, onPick }) {
 
 // ---------- Escribir en inglés / completar la frase ----------
 
-export function WriteCard({ word, mode, cloze, isNew, result, onSubmit }) {
+export function WriteCard({ word, mode, cloze, isNew, result, onSubmit, corner }) {
   const [typed, setTyped] = useState('');
   const [hinted, setHinted] = useState(false);
   const input = useRef(null);
@@ -122,6 +127,7 @@ export function WriteCard({ word, mode, cloze, isNew, result, onSubmit }) {
 
   return html`
     <form className="card flashcard" onSubmit=${submit}>
+      <${Corner}>${corner}<//>
       <${Tags} word=${word} isNew=${isNew} />
 
       ${mode === 'cloze'

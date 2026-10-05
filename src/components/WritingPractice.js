@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { html } from '../lib/html.js';
 import { shuffle } from '../lib/modes.js';
 import { speakIfAvailable } from '../lib/speech.js';
-import { SpeakButton } from './WordTools.js';
+import { MasteredToggle, SpeakButton } from './WordTools.js';
 
 const LEVEL_LABEL = {
   full: 'Copia',
@@ -245,6 +245,7 @@ export function WritingPractice({ db, settings, wordIds, onRestart, goTo }) {
                 <span className="summary-errors">
                   ${errors[wi] === 0 ? 'sin fallos' : `${errors[wi]} ${errors[wi] === 1 ? 'fallo' : 'fallos'}`}
                 </span>
+                <${MasteredToggle} db=${db} word=${w} />
               </li>
             `,
           )}

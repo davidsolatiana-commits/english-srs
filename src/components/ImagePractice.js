@@ -3,7 +3,7 @@ import { html } from '../lib/html.js';
 import { speak } from '../lib/speech.js';
 import { checkAnswer, hintMask } from '../lib/answers.js';
 import { shuffle } from '../lib/modes.js';
-import { DictLink, SpeakButton } from './WordTools.js';
+import { DictLink, MasteredToggle, SpeakButton } from './WordTools.js';
 import { WordImage } from './PracticeCards.js';
 
 // Práctica con imágenes (no cambia las fechas de repaso):
@@ -23,7 +23,7 @@ const typingInField = (e) => e.target.matches?.('input:not([readonly]), textarea
 
 // ---------- Aprender: imagen + palabra ----------
 
-function Learn({ words, settings, onGuess, onRestart }) {
+function Learn({ db, words, settings, onGuess, onRestart }) {
   const [pos, setPos] = useState(0);
   const word = words[pos];
 
@@ -63,6 +63,7 @@ function Learn({ words, settings, onGuess, onRestart }) {
       <div className="progress"><div className="progress-bar" style=${{ width: `${(pos / words.length) * 100}%` }}></div></div>
       <p className="muted progress-text"><strong>Aprender con imágenes</strong> · ${pos + 1} / ${words.length}</p>
       <div className="card flashcard image-card">
+        <div className="card-corner"><${MasteredToggle} key=${word.id} db=${db} word=${word} /></div>
         <${WordImage} key=${word.id} word=${word} className="big-image" />
         <div className="front">
           ${word.word_en}
@@ -92,7 +93,7 @@ const FEEDBACK = {
   skipped: { text: 'Esta era la palabra:', tone: 'error' },
 };
 
-function Guess({ words, settings, onRestart, onRetry }) {
+function Guess({ db, words, settings, onRestart, onRetry }) {
   // Las que fallas vuelven una vez al final de la ronda.
   const [queue, setQueue] = useState(() => words.map((w) => ({ word: w, again: false })));
   const [pos, setPos] = useState(0);
@@ -154,6 +155,7 @@ function Guess({ words, settings, onRestart, onRetry }) {
               <span className="summary-mark bad">✗</span>
               <strong>${w.word_en}</strong> <${SpeakButton} text=${w.word_en} />
               <span className="muted">${w.translation_es}</span>
+              <span className="summary-errors"><${MasteredToggle} db=${db} word=${w} /></span>
             </li>`,
           )}
         </ul>`}
@@ -177,6 +179,7 @@ function Guess({ words, settings, onRestart, onRetry }) {
         ${item.again && html`<span className="tag again">repaso de fallo</span>`}
       </p>
       <form className="card flashcard image-card" onSubmit=${check}>
+        ${result && html`<div className="card-corner"><${MasteredToggle} key=${word.id + ':' + pos} db=${db} word=${word} /></div>`}
         <${WordImage} key=${word.id + ':' + pos} word=${word} className="big-image" />
         ${!result &&
         html`
@@ -248,8 +251,9 @@ export function ImagePractice({ db, settings, wordIds, onModeChange, onRestart, 
   }
 
   return settings.imgMode === 'guess'
-    ? html`<${Guess} words=${words} settings=${settings} onRestart=${onRestart} onRetry=${onRetry} />`
+    ? html`<${Guess} db=${db} words=${words} settings=${settings} onRestart=${onRestart} onRetry=${onRetry} />`
     : html`<${Learn}
+        db=${db}
         words=${words}
         settings=${settings}
         onGuess=${() => onModeChange('guess', words.map((w) => w.id))}

@@ -4,7 +4,8 @@ import { relativeDay, todayISO } from '../lib/dates.js';
 import { CATEGORIES, CEFR_LEVELS } from '../lib/db.js';
 import { Backup } from './Backup.js';
 import { SyncCard } from './Sync.js';
-import { DictLink, SpeakButton } from './WordTools.js';
+import { DictLink, MasteredToggle, SpeakButton } from './WordTools.js';
+import { isMastered } from '../lib/sm2.js';
 import { WordDetail } from './WordDetail.js';
 import { MediaFill } from './MediaFill.js';
 import { groupOptions } from '../lib/groups.js';
@@ -15,6 +16,8 @@ const STATES = [
   { id: 'due', label: 'Para repasar hoy' },
   { id: 'new', label: 'Nuevas' },
   { id: 'hard', label: 'Difíciles' },
+  { id: 'mastered', label: 'Dominadas' },
+  { id: 'not-mastered', label: 'Sin dominar' },
   { id: 'paused', label: 'En pausa' },
 ];
 
@@ -28,6 +31,10 @@ function matchesState(w, state, today) {
       return w.ease_factor < 2.5;
     case 'paused':
       return Boolean(w.suspended);
+    case 'mastered':
+      return isMastered(w);
+    case 'not-mastered':
+      return !isMastered(w);
     default:
       return true;
   }
@@ -126,6 +133,12 @@ export function WordList({ db, onChange, version, onWrite, onPractice, groupFilt
 
   async function markKnown() {
     await db.markKnown(selectedIds, today);
+    setSelected(new Set());
+    onChange();
+  }
+
+  async function unmarkKnown() {
+    await db.unmarkKnown(selectedIds, today);
     setSelected(new Set());
     onChange();
   }
@@ -235,6 +248,8 @@ export function WordList({ db, onChange, version, onWrite, onPractice, groupFilt
             >
               ✓ Ya las sé
             </button>
+            ${selectedWords.some(isMastered) &&
+            html`<button className="btn small" onClick=${unmarkKnown}>Quitar de dominadas</button>`}
             ${anyActive && html`<button className="btn small" onClick=${() => pauseSelected(true)}>⏸ Pausar</button>`}
             ${anyPaused && html`<button className="btn small" onClick=${() => pauseSelected(false)}>▶ Reanudar</button>`}
             <select
@@ -308,7 +323,11 @@ export function WordList({ db, onChange, version, onWrite, onPractice, groupFilt
                   ${exampleTotal(w) > 1 && html`<span className="tag" title="Ejemplos guardados">${exampleTotal(w)} ejemplos</span>`}
                   ${w.suspended
                     ? html`<span className="review paused-label">⏸ En pausa</span>`
-                    : w.first_review_date
+                    : isMastered(w)
+                      ? html`<span className="review mastered-label" title=${`Próximo repaso: ${relativeDay(w.next_review_date, today)}`}>
+                          ✓ Dominada
+                        </span>`
+                      : w.first_review_date
                       ? html`<span className=${'review' + (due ? ' due' : '')}>
                           Repaso: ${relativeDay(w.next_review_date, today)}
                         </span>`
@@ -317,6 +336,7 @@ export function WordList({ db, onChange, version, onWrite, onPractice, groupFilt
               </div>
               ${!selected &&
               html`<div className="item-actions">
+                <${MasteredToggle} key=${w.id + ':' + isMastered(w)} db=${db} word=${w} onToggle=${onChange} />
                 <button
                   className="icon-btn write"
                   title="Practicar su escritura"
