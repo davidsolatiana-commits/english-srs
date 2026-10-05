@@ -51,14 +51,25 @@
             'Se abrirá la app en <b>http://localhost:5173</b>.';
           return;
         }
-        setTimeout(function () {
+        // Guarda el primer error (p. ej. una actualización publicada a medias) para mostrarlo.
+        var firstError = null;
+        window.addEventListener('error', function (e) {
+          if (!firstError) firstError = (e && (e.message || (e.error && e.error.message))) || null;
+        });
+        function show() {
           if (!document.getElementById('boot')) return;
           boot.className = 'status error';
           boot.innerHTML =
             '<strong>La app no ha podido cargar.</strong><br>' +
-            'La primera vez necesita internet para descargar React y SQLite. ' +
-            'Comprueba la conexión y recarga la página (F5).';
-        }, 10000);
+            (firstError
+              ? 'Puede que se esté publicando una actualización: espera un minuto y recarga (F5). ' +
+                'Tus datos no se han tocado.<br><small>Detalle: ' +
+                String(firstError).replace(/[<>&]/g, '') + '</small>'
+              : 'La primera vez necesita internet para descargar React y SQLite. ' +
+                'Comprueba la conexión y recarga la página (F5).');
+        }
+        window.addEventListener('error', function () { setTimeout(show, 1500); });
+        setTimeout(show, 10000);
       })();
     </script>
     <script type="module" src="src/main.js"></script>
