@@ -56,8 +56,35 @@
         window.addEventListener('error', function (e) {
           if (!firstError) firstError = (e && (e.message || (e.error && e.error.message))) || null;
         });
+        // Archivos de dos versiones mezclados (actualización a medio llegar o caché vieja): se borra
+        // la caché de la app y se recarga sola, hasta 3 veces. Los datos no se tocan.
+        var RETRY_KEY = 'english-srs:boot-retries';
+        function retries() {
+          try { return Number(sessionStorage.getItem(RETRY_KEY) || 0); } catch (e) { return 99; }
+        }
+        var healing = false;
+        function selfHeal() {
+          if (healing) return true;
+          var n = retries();
+          if (n >= 3) return false;
+          try { sessionStorage.setItem(RETRY_KEY, String(n + 1)); } catch (e) { return false; }
+          healing = true;
+          boot.className = 'status';
+          boot.innerHTML = 'Actualizando la app… (intento ' + (n + 1) + ' de 3)';
+          var clear = window.caches
+            ? caches.keys().then(function (keys) {
+                return Promise.all(keys.filter(function (k) { return k.indexOf('english-srs-app') === 0; })
+                  .map(function (k) { return caches.delete(k); }));
+              })
+            : Promise.resolve();
+          clear.catch(function () {}).then(function () {
+            setTimeout(function () { location.reload(); }, n === 0 ? 500 : 15000);
+          });
+          return true;
+        }
         function show() {
           if (!document.getElementById('boot')) return;
+          if (firstError && selfHeal()) return;
           boot.className = 'status error';
           boot.innerHTML =
             '<strong>La app no ha podido cargar.</strong><br>' +
