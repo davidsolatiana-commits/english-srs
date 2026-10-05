@@ -29,6 +29,10 @@ export const DEFAULT_SETTINGS = {
   writeWords: 5,
   writeReps: 5,
   writeAudio: true,
+  // Práctica con imágenes: aprender (imagen + palabra) o adivinar (imagen → escribir la palabra).
+  imgMode: 'learn',
+  imgOrder: 'random',
+  imgSize: 20,
   // Qué palabras estudiar (repaso de hoy, práctica libre y escritura). Listas vacías = todas.
   study: { groups: [], levels: [], categories: [], sources: [] },
 };

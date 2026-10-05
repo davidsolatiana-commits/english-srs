@@ -7,6 +7,7 @@ export const MODES = [
   { id: 'choice', label: 'Opción múltiple' },
   { id: 'write', label: 'Escribir en inglés' },
   { id: 'cloze', label: 'Completar la frase' },
+  { id: 'image', label: 'Imagen → escribir en inglés' },
 ];
 
 export const MODE_LABEL = Object.fromEntries(MODES.map((m) => [m.id, m.label]));
@@ -15,12 +16,13 @@ export const MODE_LABEL = Object.fromEntries(MODES.map((m) => [m.id, m.label]));
 //   0 aciertos seguidos (nueva o fallada) → opción múltiple (reconocer)
 //   1 → tarjeta inglés → español
 //   2 → tarjeta español → inglés (producir)
-//   3+ → escribirla, o completar su frase de ejemplo
-function autoMode(word, { canChoice, canCloze }) {
+//   3+ → escribirla, completar su frase de ejemplo o escribirla viendo su imagen
+function autoMode(word, { canChoice, canCloze, canImage }) {
   if (word.repetitions === 0) return canChoice ? 'choice' : 'flash-en';
   if (word.repetitions === 1) return 'flash-en';
   if (word.repetitions === 2) return 'flash-es';
-  return canCloze && Math.random() < 0.5 ? 'cloze' : 'write';
+  const options = ['write', ...(canCloze ? ['cloze'] : []), ...(canImage ? ['image'] : [])];
+  return options[Math.floor(Math.random() * options.length)];
 }
 
 // Si el modo elegido no es posible para esta palabra, cae en el más parecido.
@@ -28,6 +30,7 @@ export function pickMode(setting, word, abilities) {
   let mode = setting === 'auto' ? autoMode(word, abilities) : setting;
   if (mode === 'choice' && !abilities.canChoice) mode = 'flash-en';
   if (mode === 'cloze' && !abilities.canCloze) mode = 'write';
+  if (mode === 'image' && !abilities.canImage) mode = 'write';
   return mode;
 }
 

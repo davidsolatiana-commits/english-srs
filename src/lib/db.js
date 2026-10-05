@@ -174,6 +174,7 @@ const WORD_FIELDS = ['example_sentence', 'example_es', 'image', 'image_credit'];
 function studyWhere(filter = {}) {
   // Sin traducción todavía (lista importada a medio traducir): no se puede practicar.
   const parts = ['suspended = 0', "translation_es <> ''"];
+  if (filter.withImage) parts.push("image IS NOT NULL AND image <> ''");
   const groups = intList(filter.groups ?? []);
   if (groups) parts.push(`id IN (SELECT word_id FROM word_groups WHERE group_id IN (${groupTreeSql(groups)}))`);
   const params = {};
