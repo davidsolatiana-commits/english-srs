@@ -877,6 +877,33 @@ body.modal-open .fab { display: none; }
 .import-options .field { margin: 0; }
 .import-options select, .import-options input { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
 
+/* Práctica con imágenes */
+.img-modes { margin-top: -4px; }
+.image-card { align-items: center; text-align: center; }
+.big-image {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  max-height: min(46vh, 340px);
+  margin: 0 auto 10px;
+  object-fit: contain;
+  border-radius: 12px;
+  background: var(--bg);
+}
+.prompt-image {
+  display: block;
+  max-width: min(100%, 360px);
+  max-height: min(40vh, 280px);
+  margin: 0 auto 8px;
+  object-fit: contain;
+  border-radius: 12px;
+}
+.image-missing { display: flex; align-items: center; justify-content: center; min-height: 140px; border: 1px dashed var(--border); border-radius: 12px; padding: 12px; }
+.image-nav { display: flex; justify-content: space-between; gap: 10px; margin-top: 12px; }
+.image-nav .btn { flex: 1; max-width: 220px; }
+.image-nav .btn.primary { margin-left: auto; }
+.hint-line { margin-bottom: 6px; }
+
 /* Español como enunciado */
 .front.prompt-es { color: var(--accent); }
 
