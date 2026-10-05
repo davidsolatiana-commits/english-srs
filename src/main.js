@@ -6,6 +6,13 @@ import { captureInstallPrompt } from './components/InstallButton.js';
 
 captureInstallPrompt();
 
+// Ha arrancado: se reinicia el contador de reintentos automáticos de index.html.
+try {
+  sessionStorage.removeItem('english-srs:boot-retries');
+} catch {
+  // sin sessionStorage no hay reintentos que contar
+}
+
 // Service worker: hace la app instalable y que abra sin conexión.
 // Solo funciona en https o en localhost (no al abrir index.html como archivo).
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
