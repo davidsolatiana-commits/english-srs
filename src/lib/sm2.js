@@ -20,6 +20,10 @@ export const GRADES = [
 ];
 
 export const INITIAL_EASE = 2.5;
+
+// "Dominada": ya se repasa cada 3 semanas o más (por SM-2 o porque la marcaste tú).
+export const MASTERED_DAYS = 21;
+export const isMastered = (w) => Boolean(w?.first_review_date) && w.interval_days >= MASTERED_DAYS;
 const MIN_EASE = 1.3;
 
 export function schedule(card, q, today) {

@@ -760,6 +760,20 @@ function createStore(SQL, initialDb) {
       await flush();
     },
 
+    // Quitar "dominada": vuelve a repasarse mañana como palabra en aprendizaje (no se pierde el historial).
+    async unmarkKnown(ids, today) {
+      const wanted = intList(ids);
+      if (!wanted) return;
+      db.run(
+        `UPDATE words
+            SET repetitions = MIN(repetitions, 1), interval_days = 1,
+                next_review_date = date(:today, '+1 day')
+          WHERE id IN (${wanted}) AND first_review_date IS NOT NULL`,
+        { ':today': today },
+      );
+      await flush();
+    },
+
     async setSuspended(ids, suspended) {
       const wanted = ids.map(Number).filter(Number.isInteger);
       if (wanted.length === 0) return;
